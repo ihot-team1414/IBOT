@@ -18,8 +18,8 @@ function isListItem(line: string): boolean {
 }
 
 function cleanMarkdown(content: string): string {
-  let lines = content.split("\n");
-  let result: string[] = [];
+  const lines = content.split("\n");
+  const result: string[] = [];
   let inContent = false;
 
   // First pass: extract content
