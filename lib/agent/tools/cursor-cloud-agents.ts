@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import crypto from "crypto";
 import {
   deleteCursorCloudAgent,
   followupCursorCloudAgent,
@@ -11,14 +12,33 @@ import {
   stopCursorCloudAgent,
 } from "@/lib/cursor/cloud-agents";
 
-const cursorAgentIdSchema = z
+const launchedAgentRefs = new Map<string, string>();
+
+export function resolveCursorCloudAgentId(agentRef: string): string | undefined {
+  if (agentRef.startsWith("bc_")) return agentRef;
+  return launchedAgentRefs.get(agentRef);
+}
+
+function requireCursorCloudAgentId(agentRef: string): string {
+  const id = resolveCursorCloudAgentId(agentRef);
+  if (!id) {
+    throw new Error(
+      "Unknown agent reference. Launch an agent first or provide a valid bc_... agent id."
+    );
+  }
+  return id;
+}
+
+const cursorAgentRefSchema = z
   .string()
   .min(1)
-  .describe("Cursor Cloud Agent id (e.g., bc_abc123)");
+  .describe(
+    "Cursor Cloud Agent reference. Either a real agent id (bc_...) or a launchRef returned by this tool."
+  );
 
 export const cursorCloudAgentsTool = tool({
   description:
-    "Launch and control Cursor Cloud Agents for the FRC1414-Code-2026 repo. Use this to create a PR by having a cloud agent implement changes in that repo, then check status, fetch conversation, add follow-ups, or delete an agent. Model is always Auto and PR creation is always enabled.",
+    "Launch and control Cursor Cloud Agents for the FRC1414-Code-2026 repo. Always uses Auto model and always creates a PR. For launch, this tool returns a launchRef (not the agent id) so you can track it without exposing internal ids.",
   inputSchema: z.discriminatedUnion("action", [
     z.object({
       action: z.literal("launch"),
@@ -41,7 +61,7 @@ export const cursorCloudAgentsTool = tool({
     }),
     z.object({
       action: z.literal("status"),
-      id: cursorAgentIdSchema,
+      agentRef: cursorAgentRefSchema,
     }),
     z.object({
       action: z.literal("list"),
@@ -50,20 +70,20 @@ export const cursorCloudAgentsTool = tool({
     }),
     z.object({
       action: z.literal("conversation"),
-      id: cursorAgentIdSchema,
+      agentRef: cursorAgentRefSchema,
     }),
     z.object({
       action: z.literal("followup"),
-      id: cursorAgentIdSchema,
+      agentRef: cursorAgentRefSchema,
       promptText: z.string().min(1).describe("Follow-up instruction text."),
     }),
     z.object({
       action: z.literal("stop"),
-      id: cursorAgentIdSchema,
+      agentRef: cursorAgentRefSchema,
     }),
     z.object({
       action: z.literal("delete"),
-      id: cursorAgentIdSchema,
+      agentRef: cursorAgentRefSchema,
     }),
     z.object({
       action: z.literal("me"),
@@ -79,27 +99,24 @@ export const cursorCloudAgentsTool = tool({
             branchName: input.branchName,
             name: input.name,
           });
+          const launchRef = crypto.randomUUID();
+          launchedAgentRefs.set(launchRef, agent.id);
           return {
             ok: true,
             action: "launch",
-            agent,
-            // High-signal convenience fields
-            id: agent.id,
-            cursorUrl: agent.target?.url,
-            prUrl: agent.target?.prUrl,
             status: agent.status,
+            launchRef,
           };
         }
         case "status": {
-          const agent = await getCursorCloudAgent(input.id);
+          const agent = await getCursorCloudAgent(
+            requireCursorCloudAgentId(input.agentRef)
+          );
           return {
             ok: true,
             action: "status",
-            agent,
-            id: agent.id,
-            cursorUrl: agent.target?.url,
-            prUrl: agent.target?.prUrl,
             status: agent.status,
+            prUrl: agent.target?.prUrl,
           };
         }
         case "list": {
@@ -110,22 +127,28 @@ export const cursorCloudAgentsTool = tool({
           return { ok: true, action: "list", ...list };
         }
         case "conversation": {
-          const convo = await getCursorCloudAgentConversation(input.id);
+          const convo = await getCursorCloudAgentConversation(
+            requireCursorCloudAgentId(input.agentRef)
+          );
           return { ok: true, action: "conversation", ...convo };
         }
         case "followup": {
           const res = await followupCursorCloudAgent({
-            id: input.id,
+            id: requireCursorCloudAgentId(input.agentRef),
             promptText: input.promptText,
           });
           return { ok: true, action: "followup", ...res };
         }
         case "stop": {
-          const res = await stopCursorCloudAgent(input.id);
+          const res = await stopCursorCloudAgent(
+            requireCursorCloudAgentId(input.agentRef)
+          );
           return { ok: true, action: "stop", ...res };
         }
         case "delete": {
-          const res = await deleteCursorCloudAgent(input.id);
+          const res = await deleteCursorCloudAgent(
+            requireCursorCloudAgentId(input.agentRef)
+          );
           return { ok: true, action: "delete", ...res };
         }
         case "me": {
