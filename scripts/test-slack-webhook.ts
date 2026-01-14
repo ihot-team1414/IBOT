@@ -1,11 +1,14 @@
 import crypto from "crypto";
 
-const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET;
 const WEBHOOK_URL = process.env.WEBHOOK_URL || "http://localhost:3001/api/slack/events";
 
-if (!SLACK_SIGNING_SECRET) {
-  console.error("❌ SLACK_SIGNING_SECRET environment variable is required");
-  process.exit(1);
+function getSigningSecret(): string {
+  const secret = process.env.SLACK_SIGNING_SECRET;
+  if (!secret) {
+    console.error("❌ SLACK_SIGNING_SECRET environment variable is required");
+    process.exit(1);
+  }
+  return secret;
 }
 
 function generateSlackSignature(body: string, timestamp: string): string {
@@ -13,7 +16,7 @@ function generateSlackSignature(body: string, timestamp: string): string {
   const signature =
     "v0=" +
     crypto
-      .createHmac("sha256", SLACK_SIGNING_SECRET)
+      .createHmac("sha256", getSigningSecret())
       .update(sigBaseString, "utf8")
       .digest("hex");
   return signature;
