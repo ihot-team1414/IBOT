@@ -8,6 +8,7 @@ import {
   formatMessagesForContext,
 } from "@/lib/slack/context";
 import { runAgent } from "@/lib/agent";
+import { getCursorCloudAgent } from "@/lib/cursor/cloud-agents";
 
 // Store processed event IDs to handle duplicate events from Slack
 const processedEvents = new Set<string>();
@@ -50,6 +51,49 @@ async function processEvent(event: SlackEvent["event"]) {
   const { channel, ts, thread_ts, text } = event;
   const replyThreadTs = thread_ts || ts;
 
+  function extractCursorAgentId(messageText: string): string | undefined {
+    // Enforced by agent system prompt, but keep it flexible:
+    // "Cursor agent id: bc_xxx"
+    const match = messageText.match(/\bbc_[a-zA-Z0-9]+\b/);
+    return match?.[0];
+  }
+
+  async function pollForPrUrlAndPost(agentId: string) {
+    const timeoutMs = 12 * 60 * 1000; // 12 minutes
+    const intervalMs = 10 * 1000; // 10 seconds
+    const start = Date.now();
+
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const agent = await getCursorCloudAgent(agentId);
+        const prUrl = agent.target?.prUrl;
+        if (prUrl) {
+          await postMessage(
+            channel,
+            `*Cursor cloud agent finished.* PR: <${prUrl}|${prUrl}>`,
+            replyThreadTs
+          );
+          return;
+        }
+        // If agent failed, post a short status and stop polling.
+        if (agent.status === "FAILED") {
+          await postMessage(
+            channel,
+            `*Cursor cloud agent failed.* Check: <${agent.target?.url ?? `https://cursor.com/agents?id=${agentId}`}|agent ${agentId}>`,
+            replyThreadTs
+          );
+          return;
+        }
+      } catch (error) {
+        // If Cursor API isn't configured, don't spam logs or Slack.
+        console.error("Cursor agent polling error:", error);
+        return;
+      }
+
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+
   try {
     // React with eyes emoji to show we're processing
     await addReaction(channel, ts, "eyes");
@@ -78,6 +122,12 @@ async function processEvent(event: SlackEvent["event"]) {
     // Remove eyes reaction and add checkmark
     await removeReaction(channel, ts, "eyes");
     await addReaction(channel, ts, "white_check_mark");
+
+    // If the agent launched a Cursor cloud agent, poll for the PR URL and post it.
+    const cursorAgentId = extractCursorAgentId(response);
+    if (cursorAgentId) {
+      await pollForPrUrlAndPost(cursorAgentId);
+    }
   } catch (error) {
     console.error("Error processing event:", error);
 
