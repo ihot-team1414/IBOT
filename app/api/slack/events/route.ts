@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { verifySlackRequest } from "@/lib/slack/verify";
 import { addReaction, postMessage, removeReaction } from "@/lib/slack/actions";
 import {
@@ -138,10 +139,14 @@ export async function POST(request: NextRequest) {
     }
     processedEvents.add(eventId);
 
-    // Process the event asynchronously - don't await
-    // This ensures we respond to Slack within 3 seconds
-    processEvent(event).catch((error) => {
-      console.error("Background event processing failed:", error);
+    // Use after() to process the event after the response is sent
+    // This keeps the serverless function alive until processing completes
+    after(async () => {
+      try {
+        await processEvent(event);
+      } catch (error) {
+        console.error("Background event processing failed:", error);
+      }
     });
 
     // Respond immediately to Slack
