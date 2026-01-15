@@ -8,6 +8,13 @@ import {
 import { webSearchTool } from "./tools/web-search";
 import { createTeamFilesToolWithMemory } from "./tools/team-files";
 import { saveFilesystemState } from "@/lib/memory";
+import {
+  generateRunId,
+  logAgentRun,
+  logAgentStep,
+  completeAgentRun,
+  failAgentRun,
+} from "@/lib/observability";
 
 const SYSTEM_PROMPT = `You are an FRC assistant embedded in your team's Slack workspace. You're a knowledgeable teammate who helps with rules, strategy, and keeping track of team decisions.
 
@@ -178,10 +185,17 @@ export async function runAgent(
   context: string,
   config: AgentConfig
 ): Promise<string> {
+  // Generate unique run ID for observability
+  const runId = generateRunId();
+  const startTime = Date.now();
+
   // 1. Create tool with memory (loads state from Convex)
   const { tools: teamFilesTools, getFiles } = await createTeamFilesToolWithMemory({
     teamId: config.teamId,
   });
+
+  // Log the start of the run
+  await logAgentRun(runId, config.teamId, prompt);
 
   try {
     const fullPrompt = context
@@ -203,9 +217,58 @@ export async function runAgent(
       stopWhen: stepCountIs(10),
     });
 
-    return result.text || "I wasn't able to generate a response. Please try again.";
+    // 3. Log all steps from the result
+    let stepIndex = 0;
+    for (const step of result.steps) {
+      // Log tool calls
+      if (step.toolCalls && step.toolCalls.length > 0) {
+        for (const toolCall of step.toolCalls) {
+          // Cast to access args property safely
+          const toolCallAny = toolCall as { toolName: string; args?: unknown };
+          await logAgentStep(runId, stepIndex++, {
+            type: "tool_call",
+            toolName: toolCall.toolName,
+            toolArgs: toolCallAny.args,
+          });
+        }
+      }
+
+      // Log tool results
+      if (step.toolResults && step.toolResults.length > 0) {
+        for (const toolResult of step.toolResults) {
+          // Cast to access result property safely
+          const toolResultAny = toolResult as { toolName: string; result?: unknown };
+          await logAgentStep(runId, stepIndex++, {
+            type: "tool_result",
+            toolName: toolResult.toolName,
+            toolResult: toolResultAny.result,
+          });
+        }
+      }
+
+      // Log text output
+      if (step.text) {
+        await logAgentStep(runId, stepIndex++, {
+          type: "text",
+          text: step.text,
+        });
+      }
+    }
+
+    const response = result.text || "I wasn't able to generate a response. Please try again.";
+    const durationMs = Date.now() - startTime;
+
+    // 4. Mark run as completed
+    await completeAgentRun(runId, response, stepIndex, durationMs);
+
+    return response;
+  } catch (error) {
+    // Log the failure
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    await failAgentRun(runId, errorMessage);
+    throw error;
   } finally {
-    // 3. Save state after run (even if there was an error)
+    // 5. Save state after run (even if there was an error)
     console.log("[Agent] Finally block - saving state for team:", config.teamId);
     try {
       const currentFiles = await getFiles();

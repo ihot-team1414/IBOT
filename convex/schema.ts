@@ -12,4 +12,32 @@ export default defineSchema({
     updatedAt: v.number(), // Unix timestamp
     version: v.number(),   // Schema version for migrations
   }).index("by_team", ["teamId"]),
+
+  // Agent observability tables
+  agentRuns: defineTable({
+    runId: v.string(),
+    teamId: v.string(),
+    prompt: v.string(),
+    response: v.optional(v.string()),
+    status: v.union(v.literal("running"), v.literal("completed"), v.literal("error")),
+    errorMessage: v.optional(v.string()),
+    stepCount: v.number(),
+    durationMs: v.optional(v.number()),
+    createdAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_created", ["createdAt"])
+    .index("by_run_id", ["runId"]),
+
+  agentSteps: defineTable({
+    runId: v.string(),
+    stepIndex: v.number(),
+    type: v.union(v.literal("tool_call"), v.literal("tool_result"), v.literal("text")),
+    toolName: v.optional(v.string()),
+    toolArgs: v.optional(v.string()),
+    toolResult: v.optional(v.string()),
+    text: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_run", ["runId"]),
 });
