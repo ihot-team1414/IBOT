@@ -1,38 +1,36 @@
 import { createBashTool } from "bash-tool";
 import fs from "fs";
 import path from "path";
+import { loadFilesystemState } from "@/lib/memory";
 
-// Cache the tools so we don't recreate the sandbox on every call
-let cachedTools: Awaited<ReturnType<typeof createBashTool>>["tools"] | null = null;
-
-/**
- * Load all manual files from the manual directory
- */
+// Load base manual files from disk (read-only baseline)
 function loadManualFiles(): Record<string, string> {
   const manualDir = path.join(process.cwd(), "manual");
   const files: Record<string, string> = {};
 
   try {
     const manualFiles = fs.readdirSync(manualDir).filter((f) => f.endsWith(".md"));
-
     for (const file of manualFiles) {
       const filePath = path.join(manualDir, file);
       const content = fs.readFileSync(filePath, "utf-8");
-      // Store in a team-files directory structure
       files[`team-files/manual/${file}`] = content;
     }
   } catch (error) {
     console.error("Failed to load manual files:", error);
   }
 
-  // Add a README to help the agent understand the file structure
-  files["team-files/README.md"] = `# Team Files
+  return files;
+}
+
+// Generate README content
+function generateReadme(): string {
+  return `# Team Files
 
 This directory contains team materials and resources.
 
 ## Structure
 
-- \`manual/\` - FRC Game Manual sections for the 2026 REBUILT game
+- \`manual/\` - FRC Game Manual sections for the 2026 REBUILT game (read-only)
   - \`introduction.md\` - About FIRST, Core Values, Gracious Professionalism
   - \`first-season-overview.md\` - Season timeline and key dates
   - \`game-overview.md\` - Quick overview of the REBUILT game
@@ -45,40 +43,105 @@ This directory contains team materials and resources.
   - \`district-tournaments.md\` - District event details
   - \`first-championship-tournament-(c).md\` - Championship details
   - \`event-rules-(e).md\` - Event-specific rules
-  - \`glossary.md\` - Definitions of FRC terms (ROBOT, ALLIANCE, MATCH, etc.)
+  - \`glossary.md\` - Definitions of FRC terms
+
+- \`notes/\` - Team notes and persistent storage (read/write)
+  - Create files here to save information across conversations
+  - This data persists between conversations!
 
 ## Usage Tips
 
-- Use \`grep -r "search term" team-files/\` to search across all files
-- Use \`cat team-files/manual/glossary.md\` to look up term definitions
-- Use \`ls team-files/manual/\` to see all available manual sections
+- \`grep -r "search term" team-files/\` - Search across all files
+- \`cat team-files/manual/glossary.md\` - Look up term definitions
+- \`ls team-files/notes/\` - See saved team notes
+- \`echo "content" > team-files/notes/myfile.md\` - Save a note
+- \`cat team-files/notes/myfile.md\` - Read a saved note
 `;
+}
 
-  return files;
+// Result type for the tool with memory
+export interface TeamFilesToolResult {
+  tools: Awaited<ReturnType<typeof createBashTool>>["tools"];
+  getFiles: () => Promise<Record<string, string>>;
 }
 
 /**
- * Get or create the bash tools with team files loaded
+ * Create team files tool with memory support
+ * Loads stored state from Convex and merges with base manual files
  */
-export async function getTeamFilesTools() {
-  if (cachedTools) {
-    return cachedTools;
-  }
+export async function createTeamFilesToolWithMemory(
+  config: { teamId: string }
+): Promise<TeamFilesToolResult> {
+  // 1. Load base manual files (always fresh from disk)
+  const manualFiles = loadManualFiles();
 
-  const files = loadManualFiles();
+  // 2. Load stored user files from Convex
+  const storedFiles = await loadFilesystemState(config.teamId);
 
-  const { tools } = await createBashTool({
-    files,
+  // 3. Merge: manual files + stored user files + README
+  const allFiles: Record<string, string> = {
+    ...manualFiles,
+    ...storedFiles,
+    "team-files/README.md": generateReadme(),
+    // Ensure notes directory exists with a placeholder if empty
+    "team-files/notes/.gitkeep": "",
+  };
+
+  // 4. Create bash tool with merged files
+  const bashToolResult = await createBashTool({
+    files: allFiles,
   });
 
-  cachedTools = tools;
-  return tools;
+  // 5. Create getFiles function that reads current state from sandbox
+  const getFiles = async (): Promise<Record<string, string>> => {
+    const files: Record<string, string> = {};
+    const { sandbox } = bashToolResult;
+
+    try {
+      // Find all files in the notes directory
+      const findResult = await sandbox.executeCommand(
+        'find workspace/team-files/notes -type f 2>/dev/null || true'
+      );
+
+      if (findResult.stdout.trim()) {
+        const filePaths = findResult.stdout.trim().split('\n').filter(Boolean);
+
+        for (const fullPath of filePaths) {
+          try {
+            // Convert from sandbox path (workspace/...) to our path format (team-files/...)
+            const relativePath = fullPath.replace(/^workspace\//, '');
+            const content = await sandbox.readFile(fullPath);
+            // Skip empty placeholder files
+            if (content || !relativePath.endsWith('.gitkeep')) {
+              files[relativePath] = content;
+            }
+          } catch {
+            // Skip files that can't be read
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to get files from sandbox:", error);
+    }
+
+    return files;
+  };
+
+  return {
+    tools: bashToolResult.tools,
+    getFiles,
+  };
 }
 
-/**
- * Create the team files search tool for the agent
- */
-export async function createTeamFilesTool() {
-  const bashTools = await getTeamFilesTools();
-  return bashTools.bash;
+// Keep legacy function for backwards compatibility (but deprecated)
+/** @deprecated Use createTeamFilesToolWithMemory instead */
+export async function getTeamFilesTools() {
+  const manualFiles = loadManualFiles();
+  const { tools } = await createBashTool({
+    files: {
+      ...manualFiles,
+      "team-files/README.md": generateReadme(),
+    },
+  });
+  return tools;
 }

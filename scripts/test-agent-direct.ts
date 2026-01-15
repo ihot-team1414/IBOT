@@ -6,24 +6,24 @@
 import { runAgent } from "../lib/agent";
 
 async function main() {
-  console.log("🤖 Direct Agent Test\n");
-  console.log("Testing the AI agent with team files...\n");
-  console.log("-------------------------------------------\n");
+  console.log("🤖 Direct Agent Test with Memory\n");
+
+  const TEST_TEAM_ID = "test-team-123";
 
   const testCases = [
     {
+      name: "Memory - Save Note",
+      query: "Remember that we decided to use a 6-wheel west coast drive. Save this to our notes.",
+      context: "",
+    },
+    {
+      name: "Memory - Recall Note",
+      query: "What drivetrain did we decide on? Check our notes.",
+      context: "",
+    },
+    {
       name: "Team Files - Game Manual Query",
-      query: "What are the BUMPER requirements for this year's robot? Please cite the specific rules.",
-      context: "",
-    },
-    {
-      name: "Team Files - Glossary Lookup",
-      query: "What does COTS mean in FRC? Look it up in the manual.",
-      context: "",
-    },
-    {
-      name: "Team Files - Game Rules",
-      query: "What happens if a team member steps over the guardrail? What's the penalty?",
+      query: "What are the BUMPER requirements? Cite the specific rules.",
       context: "",
     },
   ];
@@ -31,14 +31,12 @@ async function main() {
   for (const testCase of testCases) {
     console.log(`\n📝 Test: ${testCase.name}`);
     console.log(`Query: "${testCase.query}"`);
-    if (testCase.context) {
-      console.log(`Context:\n${testCase.context}`);
-    }
-    console.log("\n⏳ Generating response...\n");
 
     try {
       const startTime = Date.now();
-      const response = await runAgent(testCase.query, testCase.context);
+      const response = await runAgent(testCase.query, testCase.context, {
+        teamId: TEST_TEAM_ID,
+      });
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 
       console.log("✅ Response received in", elapsed, "seconds:");
