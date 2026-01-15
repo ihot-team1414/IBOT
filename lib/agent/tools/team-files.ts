@@ -93,30 +93,29 @@ export async function createTeamFilesToolWithMemory(
   });
 
   // 5. Create getFiles function that reads current state from sandbox
+  // Note: bash-tool uses /workspace as working directory, so paths are relative to that
   const getFiles = async (): Promise<Record<string, string>> => {
     const files: Record<string, string> = {};
     const { sandbox } = bashToolResult;
 
     try {
-      // Find all files in the notes directory
+      // Find all files in the notes directory (relative to /workspace working dir)
       const findResult = await sandbox.executeCommand(
-        'find workspace/team-files/notes -type f 2>/dev/null || true'
+        'find team-files/notes -type f 2>/dev/null || true'
       );
 
       if (findResult.stdout.trim()) {
         const filePaths = findResult.stdout.trim().split('\n').filter(Boolean);
 
-        for (const fullPath of filePaths) {
+        for (const relativePath of filePaths) {
           try {
-            // Convert from sandbox path (workspace/...) to our path format (team-files/...)
-            const relativePath = fullPath.replace(/^workspace\//, '');
-            const content = await sandbox.readFile(fullPath);
+            const content = await sandbox.readFile(relativePath);
             // Skip empty placeholder files
             if (content || !relativePath.endsWith('.gitkeep')) {
               files[relativePath] = content;
             }
-          } catch {
-            // Skip files that can't be read
+          } catch (err) {
+            console.error(`Failed to read file ${relativePath}:`, err);
           }
         }
       }

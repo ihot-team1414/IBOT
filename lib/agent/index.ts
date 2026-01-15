@@ -1,6 +1,10 @@
 import { generateText, stepCountIs } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { slackSearchTool } from "./tools/slack-search";
+import {
+  slackSearchTool,
+  slackChannelHistoryTool,
+  slackListChannelsTool,
+} from "./tools/slack-search";
 import { webSearchTool } from "./tools/web-search";
 import { createTeamFilesToolWithMemory } from "./tools/team-files";
 import { saveFilesystemState } from "@/lib/memory";
@@ -14,10 +18,10 @@ Keep it short:
 - Be conversational like a teammate, not an encyclopedia
 
 Tools:
-- \`teamFiles\`: Access the FRC Game Manual AND persistent team notes via bash commands
-  - Manual: \`team-files/manual/\` (read-only reference materials)
-  - Notes: \`team-files/notes/\` (read/write - persists across conversations!)
-- \`slackSearch\`: Search team's Slack history
+- \`teamFiles\`: Access the FRC Game Manual and persistent team notes/memory
+- \`slackSearch\`: Search team's Slack history for specific topics
+- \`slackChannelHistory\`: Get recent messages from a channel to understand ongoing discussions
+- \`slackListChannels\`: List available channels (use before slackChannelHistory if needed)
 - \`webSearch\`: Search the web - *strongly prefer Chief Delphi (chiefdelphi.com)* for FRC questions
 
 ## Team Notes (Memory)
@@ -72,8 +76,10 @@ Rules:
 3. For technical/strategy: search Chief Delphi first
 4. Use Slack mrkdwn: *bold*, \`code\`, <url|link text>
 5. Not sure? Say so briefly. Suggest where to look.
-6. Check notes before saying "I don't know" about team-specific info
-7. Proactively save important team info to notes
+6. When asked about what's happening in a channel, use slackChannelHistory to get context
+7. Check your notes/memory before saying "I don't know" about team-specific info
+8. Proactively save important team info to notes when the team makes decisions or shares specs
+9. NEVER mention file paths, filenames, or internal tool details to users - present information naturally (e.g. say "the game manual says..." not "in team-files/manual/...", say "I have that saved" not "in team-files/notes/...")
 
 Be brief. Cite sources. Use newlines.`;
 
@@ -104,6 +110,8 @@ export async function runAgent(
       tools: {
         teamFiles: teamFilesTools.bash,
         slackSearch: slackSearchTool,
+        slackChannelHistory: slackChannelHistoryTool,
+        slackListChannels: slackListChannelsTool,
         webSearch: webSearchTool,
       },
       stopWhen: stepCountIs(10),

@@ -106,3 +106,81 @@ export async function searchMessages(
     return [];
   }
 }
+
+export interface ChannelMessage {
+  user: string;
+  text: string;
+  timestamp: string;
+  threadTs?: string;
+  replyCount?: number;
+}
+
+/**
+ * Get the last k messages from a channel
+ */
+export async function getChannelHistory(
+  channel: string,
+  limit: number = 10
+): Promise<ChannelMessage[]> {
+  try {
+    const result = await slack.conversations.history({
+      channel,
+      limit: Math.min(limit, 100), // Cap at 100 messages
+    });
+
+    const messages = result.messages || [];
+    
+    // Get user info for each unique user ID
+    const userIds = [...new Set(messages.map((m) => m.user).filter(Boolean))];
+    const userMap = new Map<string, string>();
+    
+    await Promise.all(
+      userIds.map(async (userId) => {
+        try {
+          const userInfo = await slack.users.info({ user: userId! });
+          userMap.set(
+            userId!,
+            userInfo.user?.real_name || userInfo.user?.name || userId!
+          );
+        } catch {
+          userMap.set(userId!, userId!);
+        }
+      })
+    );
+
+    return messages.map((msg) => ({
+      user: userMap.get(msg.user || "") || msg.user || "Unknown",
+      text: msg.text || "",
+      timestamp: msg.ts || "",
+      threadTs: msg.thread_ts,
+      replyCount: msg.reply_count,
+    }));
+  } catch (error) {
+    console.error("Failed to get channel history:", error);
+    return [];
+  }
+}
+
+/**
+ * List all channels the bot has access to
+ */
+export async function listChannels(): Promise<
+  { id: string; name: string; isMember: boolean }[]
+> {
+  try {
+    const result = await slack.conversations.list({
+      types: "public_channel,private_channel",
+      exclude_archived: true,
+      limit: 200,
+    });
+
+    return (result.channels || []).map((ch) => ({
+      id: ch.id || "",
+      name: ch.name || "",
+      isMember: ch.is_member || false,
+    }));
+  } catch (error) {
+    console.error("Failed to list channels:", error);
+    return [];
+  }
+}
