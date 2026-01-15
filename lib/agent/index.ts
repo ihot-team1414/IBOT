@@ -104,7 +104,7 @@ export async function runAgent(
 
     // 2. Run the agent
     const result = await generateText({
-      model: anthropic("claude-sonnet-4-20250514"),
+      model: anthropic("claude-haiku-4-5"),
       system: SYSTEM_PROMPT,
       prompt: fullPrompt,
       tools: {
