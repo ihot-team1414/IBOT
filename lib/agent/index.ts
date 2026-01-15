@@ -120,11 +120,14 @@ export async function runAgent(
     return result.text || "I wasn't able to generate a response. Please try again.";
   } finally {
     // 3. Save state after run (even if there was an error)
+    console.log("[Agent] Finally block - saving state for team:", config.teamId);
     try {
       const currentFiles = await getFiles();
+      console.log("[Agent] Got files from sandbox:", Object.keys(currentFiles));
       await saveFilesystemState(config.teamId, currentFiles);
+      console.log("[Agent] State saved successfully");
     } catch (saveError) {
-      console.error("Failed to save filesystem state:", saveError);
+      console.error("[Agent] Failed to save filesystem state:", saveError);
     }
   }
 }

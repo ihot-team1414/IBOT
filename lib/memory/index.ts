@@ -51,21 +51,32 @@ export async function saveFilesystemState(
   teamId: string, 
   files: Record<string, string>
 ): Promise<void> {
+  console.log("[Memory] saveFilesystemState called with", Object.keys(files).length, "files");
+  
   if (!convex) {
-    console.warn("Convex client not initialized - skipping save");
+    console.warn("[Memory] Convex client not initialized - skipping save");
     return;
   }
 
   try {
     // Only save user files (notes directory)
     const userFiles = extractUserFiles(files);
+    const filesToSave = recordToArray(userFiles);
     
+    console.log("[Memory] After filtering:", {
+      inputFiles: Object.keys(files),
+      filteredFiles: Object.keys(userFiles),
+      filesToSave: filesToSave.map(f => ({ path: f.path, contentLength: f.content.length })),
+    });
+    
+    console.log("[Memory] Calling Convex mutation...");
     await convex.mutation(api.teamFiles.saveState, {
       teamId,
-      files: recordToArray(userFiles),
+      files: filesToSave,
     });
+    console.log("[Memory] Convex mutation completed successfully");
   } catch (error) {
-    console.error("Failed to save filesystem state:", error);
+    console.error("[Memory] Failed to save filesystem state:", error);
     throw error;
   }
 }

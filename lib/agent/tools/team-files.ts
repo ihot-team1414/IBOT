@@ -93,36 +93,50 @@ export async function createTeamFilesToolWithMemory(
   });
 
   // 5. Create getFiles function that reads current state from sandbox
-  // Note: bash-tool uses /workspace as working directory, so paths are relative to that
+  // Uses bash commands (cat) instead of sandbox.readFile which has path issues
   const getFiles = async (): Promise<Record<string, string>> => {
+    console.log("[TeamFiles] getFiles called");
     const files: Record<string, string> = {};
     const { sandbox } = bashToolResult;
 
     try {
-      // Find all files in the notes directory (relative to /workspace working dir)
+      // Find all files in the notes directory
       const findResult = await sandbox.executeCommand(
         'find team-files/notes -type f 2>/dev/null || true'
       );
+      
+      console.log("[TeamFiles] find result:", findResult.stdout.trim() || "(empty)");
 
       if (findResult.stdout.trim()) {
         const filePaths = findResult.stdout.trim().split('\n').filter(Boolean);
+        console.log("[TeamFiles] Found", filePaths.length, "files:", filePaths);
 
-        for (const relativePath of filePaths) {
+        for (const filePath of filePaths) {
           try {
-            const content = await sandbox.readFile(relativePath);
-            // Skip empty placeholder files
-            if (content || !relativePath.endsWith('.gitkeep')) {
-              files[relativePath] = content;
+            // Use cat to read file content (sandbox.readFile has path issues)
+            const catResult = await sandbox.executeCommand(`cat "${filePath}"`);
+            
+            if (catResult.exitCode === 0) {
+              // Normalize path to relative format (team-files/notes/...)
+              const relativePath = filePath.replace(/^\/workspace\//, '');
+              const content = catResult.stdout;
+              
+              // Skip empty placeholder files
+              if (content || !relativePath.endsWith('.gitkeep')) {
+                files[relativePath] = content;
+                console.log("[TeamFiles] Read file:", relativePath, "length:", content.length);
+              }
             }
           } catch (err) {
-            console.error(`Failed to read file ${relativePath}:`, err);
+            console.error(`[TeamFiles] Failed to read file ${filePath}:`, err);
           }
         }
       }
     } catch (error) {
-      console.error("Failed to get files from sandbox:", error);
+      console.error("[TeamFiles] Failed to get files from sandbox:", error);
     }
 
+    console.log("[TeamFiles] getFiles returning", Object.keys(files).length, "files");
     return files;
   };
 
