@@ -88,20 +88,21 @@ export const slackChannelHistoryTool = tool({
 
 export const slackListChannelsTool = tool({
   description:
-    "List all Slack channels the bot has access to. Use this to discover channel names and IDs before using slackChannelHistory.",
+    "List all public Slack channels in the workspace. The bot can read any public channel (it will auto-join if needed).",
   inputSchema: z.object({}),
   execute: async () => {
     const channels = await listChannels();
 
     if (channels.length === 0) {
-      return "No channels found or bot doesn't have access to any channels.";
+      return "No channels found.";
     }
 
-    const memberChannels = channels.filter((ch) => ch.isMember);
-    const formatted = memberChannels
-      .map((ch) => `• #${ch.name} (${ch.id})`)
+    // Show all channels, mark which ones bot is already in
+    const formatted = channels
+      .map((ch) => `• #${ch.name} (${ch.id})${ch.isMember ? "" : " [will join on read]"}`)
       .join("\n");
 
-    return `Bot has access to ${memberChannels.length} channels:\n\n${formatted}`;
+    const memberCount = channels.filter((ch) => ch.isMember).length;
+    return `Found ${channels.length} channels (bot is in ${memberCount}):\n\n${formatted}`;
   },
 });

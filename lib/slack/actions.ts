@@ -117,18 +117,39 @@ export interface ChannelMessage {
 
 /**
  * Get the last k messages from a channel
+ * Auto-joins public channels if not already a member
  */
 export async function getChannelHistory(
   channel: string,
   limit: number = 10
 ): Promise<ChannelMessage[]> {
   try {
-    const result = await slack.conversations.history({
-      channel,
-      limit: Math.min(limit, 100), // Cap at 100 messages
-    });
+    // Try to get history, auto-join if we get "not_in_channel" error
+    let result;
+    try {
+      result = await slack.conversations.history({
+        channel,
+        limit: Math.min(limit, 100),
+      });
+    } catch (error) {
+      const slackError = error as { data?: { error?: string } };
+      if (slackError?.data?.error === "not_in_channel") {
+        // Try to join the channel first
+        const joined = await joinChannel(channel);
+        if (joined) {
+          result = await slack.conversations.history({
+            channel,
+            limit: Math.min(limit, 100),
+          });
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
+    }
 
-    const messages = result.messages || [];
+    const messages = result?.messages || [];
     
     // Get user info for each unique user ID
     const userIds = [...new Set(messages.map((m) => m.user).filter(Boolean))];
@@ -182,5 +203,22 @@ export async function listChannels(): Promise<
   } catch (error) {
     console.error("Failed to list channels:", error);
     return [];
+  }
+}
+
+/**
+ * Join a public channel
+ */
+export async function joinChannel(channel: string): Promise<boolean> {
+  try {
+    await slack.conversations.join({ channel });
+    return true;
+  } catch (error) {
+    // Ignore "already_in_channel" errors
+    if ((error as { data?: { error?: string } })?.data?.error === "already_in_channel") {
+      return true;
+    }
+    console.error("Failed to join channel:", error);
+    return false;
   }
 }
