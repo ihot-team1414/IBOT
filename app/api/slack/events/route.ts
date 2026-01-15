@@ -20,6 +20,7 @@ setInterval(() => {
 interface SlackEvent {
   type: string;
   event_id?: string;
+  team_id?: string;  // Slack workspace/team ID for memory isolation
   challenge?: string;
   event?: {
     type: string;
@@ -44,7 +45,7 @@ function removeBotMention(text: string): string {
 /**
  * Process the mention event asynchronously
  */
-async function processEvent(event: SlackEvent["event"]) {
+async function processEvent(event: SlackEvent["event"], teamId: string) {
   if (!event) return;
 
   const { channel, ts, thread_ts, text } = event;
@@ -69,8 +70,8 @@ async function processEvent(event: SlackEvent["event"]) {
     // Extract the actual query by removing the bot mention
     const query = removeBotMention(text);
 
-    // Run the AI agent
-    const response = await runAgent(query, context);
+    // Run the AI agent with team ID for memory isolation
+    const response = await runAgent(query, context, { teamId });
 
     // Post the response in the thread
     await postMessage(channel, response, replyThreadTs);
@@ -125,6 +126,7 @@ export async function POST(request: NextRequest) {
   // Handle event callbacks
   if (payload.type === "event_callback" && payload.event) {
     const event = payload.event;
+    const teamId = payload.team_id || "default"; // Fallback for safety
 
     // Only handle app_mention events
     if (event.type !== "app_mention") {
@@ -143,7 +145,7 @@ export async function POST(request: NextRequest) {
     // This keeps the serverless function alive until processing completes
     after(async () => {
       try {
-        await processEvent(event);
+        await processEvent(event, teamId);
       } catch (error) {
         console.error("Background event processing failed:", error);
       }
