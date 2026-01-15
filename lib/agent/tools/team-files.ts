@@ -100,7 +100,12 @@ export async function createTeamFilesToolWithMemory(
     const { sandbox } = bashToolResult;
 
     try {
-      // Find all files in the notes directory
+      // Get current working directory to understand the environment
+      const pwdResult = await sandbox.executeCommand('pwd');
+      const cwd = pwdResult.stdout.trim();
+      console.log("[TeamFiles] Working directory:", cwd);
+
+      // Find all files in the notes directory (works in both local and Vercel)
       const findResult = await sandbox.executeCommand(
         'find team-files/notes -type f 2>/dev/null || true'
       );
@@ -117,8 +122,11 @@ export async function createTeamFilesToolWithMemory(
             const catResult = await sandbox.executeCommand(`cat "${filePath}"`);
             
             if (catResult.exitCode === 0) {
-              // Normalize path to relative format (team-files/notes/...)
-              const relativePath = filePath.replace(/^\/workspace\//, '');
+              // Normalize path - strip any absolute prefix to get team-files/notes/...
+              const relativePath = filePath
+                .replace(/^\/vercel\/sandbox\/workspace\//, '')
+                .replace(/^\/workspace\//, '')
+                .replace(/^\.\//, '');
               const content = catResult.stdout;
               
               // Skip empty placeholder files
@@ -126,6 +134,8 @@ export async function createTeamFilesToolWithMemory(
                 files[relativePath] = content;
                 console.log("[TeamFiles] Read file:", relativePath, "length:", content.length);
               }
+            } else {
+              console.error("[TeamFiles] cat failed for", filePath, "exit:", catResult.exitCode, "stderr:", catResult.stderr);
             }
           } catch (err) {
             console.error(`[TeamFiles] Failed to read file ${filePath}:`, err);
@@ -136,7 +146,7 @@ export async function createTeamFilesToolWithMemory(
       console.error("[TeamFiles] Failed to get files from sandbox:", error);
     }
 
-    console.log("[TeamFiles] getFiles returning", Object.keys(files).length, "files");
+    console.log("[TeamFiles] getFiles returning", Object.keys(files).length, "files:", Object.keys(files));
     return files;
   };
 
