@@ -68,6 +68,16 @@ function truncateText(text: string, maxLength: number = 100): string {
   return text.substring(0, maxLength) + "...";
 }
 
+function formatJson(jsonString: string | undefined): string {
+  if (!jsonString) return "";
+  try {
+    const parsed = JSON.parse(jsonString);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return jsonString;
+  }
+}
+
 function StepCard({ step }: { step: AgentStep }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -85,33 +95,50 @@ function StepCard({ step }: { step: AgentStep }) {
   const getStepTitle = () => {
     switch (step.type) {
       case "tool_call":
-        return `Tool Call: ${step.toolName}`;
+        return `${step.toolName}`;
       case "tool_result":
-        return `Tool Result: ${step.toolName}`;
+        return `${step.toolName} Result`;
       case "text":
         return "Text Output";
+    }
+  };
+
+  const getContentLabel = () => {
+    switch (step.type) {
+      case "tool_call":
+        return "Arguments:";
+      case "tool_result":
+        return "Result:";
+      case "text":
+        return null;
     }
   };
 
   const getContent = () => {
     switch (step.type) {
       case "tool_call":
-        return step.toolArgs;
+        return formatJson(step.toolArgs);
       case "tool_result":
-        return step.toolResult;
+        return formatJson(step.toolResult);
       case "text":
         return step.text;
     }
   };
 
   const content = getContent();
+  const contentLabel = getContentLabel();
   const formattedContent = content ? (
-    <pre className="whitespace-pre-wrap text-xs bg-muted p-2 rounded overflow-auto max-h-96">
-      {expanded ? content : truncateText(content, 200)}
-    </pre>
+    <div>
+      {contentLabel && (
+        <span className="text-xs text-muted-foreground font-medium">{contentLabel}</span>
+      )}
+      <pre className="whitespace-pre-wrap text-xs bg-muted p-2 rounded overflow-auto max-h-96 font-mono mt-1">
+        {expanded ? content : truncateText(content, 500)}
+      </pre>
+    </div>
   ) : null;
 
-  const needsExpansion = content && content.length > 200;
+  const needsExpansion = content && content.length > 500;
 
   return (
     <div className="border-l-2 border-muted pl-4 py-2">
