@@ -6,6 +6,7 @@ import {
   slackListChannelsTool,
 } from "./tools/slack-search";
 import { webSearchTool } from "./tools/web-search";
+import { youtubeVideoTool } from "./tools/youtube-video";
 import { createTeamFilesToolWithMemory } from "./tools/team-files";
 import { saveFilesystemState } from "@/lib/memory";
 import {
@@ -146,6 +147,7 @@ You have access to tools, but never mention them by name to users. Present infor
 - Check recent channel messages for context
 - Search the web (especially Chief Delphi) for strategy and technical advice
 - Remember team decisions, specs, and notes across conversations
+- Watch and summarize YouTube videos (FRC reveals, tutorials, match footage, etc.)
 
 ## Searching for Information
 
@@ -320,6 +322,7 @@ export async function runAgent(
         slackChannelHistory: slackChannelHistoryTool,
         slackListChannels: slackListChannelsTool,
         webSearch: webSearchTool,
+        youtubeVideo: youtubeVideoTool,
       },
       stopWhen: stepCountIs(30),
     });
