@@ -5,7 +5,7 @@ import {
   slackChannelHistoryTool,
   slackListChannelsTool,
 } from "./tools/slack-search";
-import { webSearchTool } from "./tools/web-search";
+import { webSearchTool, webScrapeTool } from "./tools/web-search";
 import { youtubeVideoTool } from "./tools/youtube-video";
 import { createTeamFilesToolWithMemory } from "./tools/team-files";
 import { saveFilesystemState } from "@/lib/memory";
@@ -168,6 +168,7 @@ You have access to tools, but never mention them by name to users. Present infor
 - Search the team's Slack history for past discussions
 - Check recent channel messages for context
 - Search the web (especially Chief Delphi) for strategy and technical advice
+- Read full webpage contents when you need more detail from a URL
 - Remember team decisions, specs, and notes across conversations
 - Watch and summarize YouTube videos (FRC reveals, tutorials, match footage, etc.)
 
@@ -178,9 +179,20 @@ NEVER suggest the user do something you haven't already tried yourself. If you'r
 
 ### Search Strategy by Topic
 - Rules questions: Check the manual first, then Chief Delphi for interpretations
-- Strategy/technical: Search Chief Delphi first—it's the FRC community goldmine
+- Strategy/technical: ALWAYS search Chief Delphi first—it's the FRC community goldmine
 - Team logistics (meetings, schedules, locations): Check the relevant channel's recent history
 - Team-specific questions: Check your notes/memory, then relevant Slack channels
+
+### Chief Delphi is Your Best Friend
+For ANY FRC-related technical question (mechanisms, strategy, rules interpretations, design advice, programming patterns, etc.), you should search Chief Delphi. This includes:
+- "How do I build X?" → Search Chief Delphi
+- "What's a good approach for Y?" → Search Chief Delphi
+- "Has anyone done Z?" → Search Chief Delphi
+- Robot design questions → Search Chief Delphi
+- Game strategy questions → Search Chief Delphi
+- Specific mechanism questions (intake, shooter, climber, etc.) → Search Chief Delphi
+
+Use the webSearch tool with "site:chiefdelphi.com" to search, then use webScrape to read relevant threads in detail. Chief Delphi has 20+ years of FRC community knowledge—use it liberally.
 
 ### Be Thorough - Use Your Tools Liberally
 You have plenty of capacity for tool calls. Use them! It's better to search 5 channels and find the answer than to search 1 and give up. A good search trajectory might look like:
@@ -359,6 +371,7 @@ export async function runAgent(
         slackChannelHistory: slackChannelHistoryTool,
         slackListChannels: slackListChannelsTool,
         webSearch: webSearchTool,
+        webScrape: webScrapeTool,
         youtubeVideo: youtubeVideoTool,
       },
       stopWhen: stepCountIs(30),
