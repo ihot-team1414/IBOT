@@ -1,4 +1,4 @@
-import { generateText, stepCountIs } from "ai";
+import { generateText, stepCountIs, UserContent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import {
   slackSearchTool,
@@ -15,6 +15,7 @@ import {
   completeAgentRun,
   failAgentRun,
 } from "@/lib/observability";
+import type { ImageAttachment } from "@/lib/slack/context";
 
 const SYSTEM_PROMPT = `You are an FRC assistant embedded in your team's Slack workspace. You're a knowledgeable teammate who helps with rules, strategy, and keeping track of team decisions.
 
@@ -60,7 +61,9 @@ That's floor to highest point, fully extended."
 - "Great question!"
 - "I'd be happy to help with that"
 - "Is there anything else I can assist with?"
+- "Got it!", "Found it!", "Sure thing!", or similar exclamations
 - Any variation of offering more help unprompted
+- Any filler phrases before giving the answer - just give the answer
 
 ## Citing Sources
 Cite external sources, but keep team info conversational:
@@ -199,6 +202,7 @@ Say so briefly. Don't apologize profusely. Suggest where to look.
 
 export interface AgentConfig {
   teamId: string;
+  images?: ImageAttachment[];
 }
 
 export async function runAgent(
@@ -215,19 +219,39 @@ export async function runAgent(
     teamId: config.teamId,
   });
 
-  // Log the start of the run
-  await logAgentRun(runId, config.teamId, prompt);
+  // Log the start of the run (include image count in prompt if present)
+  const promptWithImageInfo = config.images && config.images.length > 0
+    ? `${prompt}\n\n[${config.images.length} image(s) attached]`
+    : prompt;
+  await logAgentRun(runId, config.teamId, promptWithImageInfo);
 
   try {
-    const fullPrompt = context
+    const textPrompt = context
       ? `Here is the recent conversation context:\n\n${context}\n\n---\n\nUser's request: ${prompt}`
       : prompt;
+
+    // Build multimodal content if images are present
+    let userContent: UserContent;
+    if (config.images && config.images.length > 0) {
+      userContent = [
+        { type: "text" as const, text: textPrompt },
+        ...config.images
+          .filter((img) => img.base64)
+          .map((img) => ({
+            type: "image" as const,
+            image: img.base64!,
+            mimeType: img.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+          })),
+      ];
+    } else {
+      userContent = textPrompt;
+    }
 
     // 2. Run the agent
     const result = await generateText({
       model: anthropic("claude-haiku-4-5"),
       system: SYSTEM_PROMPT,
-      prompt: fullPrompt,
+      messages: [{ role: "user", content: userContent }],
       tools: {
         teamFiles: teamFilesTools.bash,
         slackSearch: slackSearchTool,

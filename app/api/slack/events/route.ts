@@ -6,6 +6,8 @@ import {
   getThreadContext,
   getChannelContext,
   formatMessagesForContext,
+  extractImagesFromMessage,
+  type ImageAttachment,
 } from "@/lib/slack/context";
 import { runAgent } from "@/lib/agent";
 
@@ -16,6 +18,12 @@ const processedEvents = new Set<string>();
 setInterval(() => {
   processedEvents.clear();
 }, 5 * 60 * 1000);
+
+interface SlackFile {
+  mimetype?: string;
+  url_private?: string;
+  url_private_download?: string;
+}
 
 interface SlackEvent {
   type: string;
@@ -30,6 +38,7 @@ interface SlackEvent {
     thread_ts?: string;
     channel: string;
     event_ts: string;
+    files?: SlackFile[];
   };
 }
 
@@ -67,11 +76,20 @@ async function processEvent(event: SlackEvent["event"], teamId: string) {
       context = await formatMessagesForContext(messages);
     }
 
+    // Extract images from the message
+    let images: ImageAttachment[] = [];
+    if (event.files && event.files.length > 0) {
+      // Convert event to MessageElement-like structure for extractImagesFromMessage
+      images = await extractImagesFromMessage({
+        files: event.files,
+      } as Parameters<typeof extractImagesFromMessage>[0]);
+    }
+
     // Extract the actual query by removing the bot mention
     const query = removeBotMention(text);
 
-    // Run the AI agent with team ID for memory isolation
-    const response = await runAgent(query, context, { teamId });
+    // Run the AI agent with team ID for memory isolation and images
+    const response = await runAgent(query, context, { teamId, images });
 
     // Post the response in the thread
     await postMessage(channel, response, replyThreadTs);

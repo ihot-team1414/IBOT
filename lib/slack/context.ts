@@ -8,8 +8,70 @@ interface FormattedMessage {
   threadTs?: string;
 }
 
+export interface ImageAttachment {
+  url: string;
+  mimeType: string;
+  base64?: string;
+}
+
 // Cache for user info to avoid repeated API calls
 const userCache = new Map<string, string>();
+
+/**
+ * Download an image from Slack and convert to base64
+ */
+async function downloadSlackImage(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`Failed to download image: ${response.status}`);
+      return null;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    return base64;
+  } catch (error) {
+    console.error("Error downloading Slack image:", error);
+    return null;
+  }
+}
+
+/**
+ * Extract images from a Slack message
+ */
+export async function extractImagesFromMessage(
+  message: MessageElement
+): Promise<ImageAttachment[]> {
+  const images: ImageAttachment[] = [];
+
+  // Check for files attached to the message
+  if (message.files && Array.isArray(message.files)) {
+    for (const file of message.files) {
+      // Only process image files
+      if (file.mimetype?.startsWith("image/")) {
+        const url = file.url_private || file.url_private_download;
+        if (url) {
+          const base64 = await downloadSlackImage(url);
+          if (base64) {
+            images.push({
+              url,
+              mimeType: file.mimetype,
+              base64,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return images;
+}
 
 /**
  * Get user display name from user ID
