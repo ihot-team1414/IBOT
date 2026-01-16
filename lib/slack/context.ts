@@ -162,3 +162,19 @@ export async function formatMessagesForContext(
     })
     .join("\n");
 }
+
+/**
+ * Extract images from all messages in a conversation
+ */
+export async function extractImagesFromMessages(
+  messages: MessageElement[]
+): Promise<ImageAttachment[]> {
+  const allImages: ImageAttachment[] = [];
+
+  for (const message of messages) {
+    const images = await extractImagesFromMessage(message);
+    allImages.push(...images);
+  }
+
+  return allImages;
+}

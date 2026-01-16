@@ -6,7 +6,7 @@ import {
   getThreadContext,
   getChannelContext,
   formatMessagesForContext,
-  extractImagesFromMessage,
+  extractImagesFromMessages,
   type ImageAttachment,
 } from "@/lib/slack/context";
 import { runAgent } from "@/lib/agent";
@@ -64,25 +64,20 @@ async function processEvent(event: SlackEvent["event"], teamId: string) {
     // React with eyes emoji to show we're processing
     await addReaction(channel, ts, "eyes");
 
-    // Get conversation context
+    // Get conversation context and extract images from all messages
     let context: string;
+    let images: ImageAttachment[] = [];
+    
     if (thread_ts) {
       // If in a thread, get full thread context
       const messages = await getThreadContext(channel, thread_ts);
       context = await formatMessagesForContext(messages);
+      images = await extractImagesFromMessages(messages);
     } else {
       // Otherwise get recent channel messages
       const messages = await getChannelContext(channel, 10);
       context = await formatMessagesForContext(messages);
-    }
-
-    // Extract images from the message
-    let images: ImageAttachment[] = [];
-    if (event.files && event.files.length > 0) {
-      // Convert event to MessageElement-like structure for extractImagesFromMessage
-      images = await extractImagesFromMessage({
-        files: event.files,
-      } as Parameters<typeof extractImagesFromMessage>[0]);
+      images = await extractImagesFromMessages(messages);
     }
 
     // Extract the actual query by removing the bot mention
