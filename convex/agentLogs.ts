@@ -8,6 +8,14 @@ export const createRun = mutation({
     runId: v.string(),
     teamId: v.string(),
     prompt: v.string(),
+    // Optional metadata
+    userId: v.optional(v.string()),
+    userName: v.optional(v.string()),
+    channelId: v.optional(v.string()),
+    channelName: v.optional(v.string()),
+    threadTs: v.optional(v.string()),
+    isThread: v.optional(v.boolean()),
+    imageCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("agentRuns", {
@@ -17,6 +25,13 @@ export const createRun = mutation({
       status: "running",
       stepCount: 0,
       createdAt: Date.now(),
+      userId: args.userId,
+      userName: args.userName,
+      channelId: args.channelId,
+      channelName: args.channelName,
+      threadTs: args.threadTs,
+      isThread: args.isThread,
+      imageCount: args.imageCount,
     });
   },
 });

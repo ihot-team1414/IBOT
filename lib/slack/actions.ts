@@ -222,3 +222,40 @@ export async function joinChannel(channel: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Get channel info by ID
+ */
+export async function getChannelInfo(
+  channelId: string
+): Promise<{ id: string; name: string } | null> {
+  try {
+    const result = await slack.conversations.info({ channel: channelId });
+    return {
+      id: result.channel?.id || channelId,
+      name: result.channel?.name || "unknown",
+    };
+  } catch (error) {
+    console.error("Failed to get channel info:", error);
+    return null;
+  }
+}
+
+/**
+ * Get user info by ID
+ */
+export async function getUserInfo(
+  userId: string
+): Promise<{ id: string; name: string; realName: string } | null> {
+  try {
+    const result = await slack.users.info({ user: userId });
+    return {
+      id: result.user?.id || userId,
+      name: result.user?.name || "unknown",
+      realName: result.user?.real_name || result.user?.name || "Unknown User",
+    };
+  } catch (error) {
+    console.error("Failed to get user info:", error);
+    return null;
+  }
+}

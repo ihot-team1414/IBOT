@@ -19,6 +19,14 @@ type AgentRun = {
   durationMs?: number;
   createdAt: number;
   completedAt?: number;
+  // Metadata fields
+  userId?: string;
+  userName?: string;
+  channelId?: string;
+  channelName?: string;
+  threadTs?: string;
+  isThread?: boolean;
+  imageCount?: number;
 };
 
 type AgentStep = {
@@ -175,6 +183,38 @@ function RunDetail({ runId }: { runId: string }) {
 
   return (
     <div className="space-y-4 p-4 bg-muted/30 rounded-lg">
+      {/* Metadata grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        {run.userName && (
+          <div>
+            <span className="text-muted-foreground text-xs">User</span>
+            <p className="font-medium">{run.userName}</p>
+            {run.userId && <p className="text-xs text-muted-foreground">{run.userId}</p>}
+          </div>
+        )}
+        {run.channelName && (
+          <div>
+            <span className="text-muted-foreground text-xs">Channel</span>
+            <p className="font-medium">#{run.channelName}</p>
+            {run.isThread && <p className="text-xs text-muted-foreground">In thread</p>}
+          </div>
+        )}
+        <div>
+          <span className="text-muted-foreground text-xs">Duration</span>
+          <p className="font-medium">{formatDuration(run.durationMs)}</p>
+        </div>
+        <div>
+          <span className="text-muted-foreground text-xs">Steps</span>
+          <p className="font-medium">{run.stepCount}</p>
+        </div>
+        {run.imageCount && run.imageCount > 0 && (
+          <div>
+            <span className="text-muted-foreground text-xs">Images</span>
+            <p className="font-medium">{run.imageCount}</p>
+          </div>
+        )}
+      </div>
+
       <div>
         <h4 className="font-medium text-sm text-muted-foreground mb-1">Full Prompt</h4>
         <p className="text-sm">{run.prompt}</p>
@@ -225,15 +265,32 @@ function RunListItem({ run, isExpanded, onToggle }: {
               {truncateText(run.prompt, 80)}
             </CardTitle>
             <CardDescription className="mt-1">
-              <span className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap text-xs">
                 <span>{formatTimestamp(run.createdAt)}</span>
                 <span className="text-muted-foreground">|</span>
-                <span>Team: {run.teamId}</span>
-                <span className="text-muted-foreground">|</span>
+                {run.userName && (
+                  <>
+                    <span className="font-medium">{run.userName}</span>
+                    <span className="text-muted-foreground">|</span>
+                  </>
+                )}
+                {run.channelName && (
+                  <>
+                    <span className="font-medium">#{run.channelName}</span>
+                    {run.isThread && <span className="text-muted-foreground">(thread)</span>}
+                    <span className="text-muted-foreground">|</span>
+                  </>
+                )}
                 <span>{run.stepCount} steps</span>
                 <span className="text-muted-foreground">|</span>
                 <span>{formatDuration(run.durationMs)}</span>
-              </span>
+                {run.imageCount && run.imageCount > 0 && (
+                  <>
+                    <span className="text-muted-foreground">|</span>
+                    <span>📷 {run.imageCount}</span>
+                  </>
+                )}
+              </div>
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">

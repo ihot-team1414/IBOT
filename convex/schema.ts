@@ -25,10 +25,20 @@ export default defineSchema({
     durationMs: v.optional(v.number()),
     createdAt: v.number(),
     completedAt: v.optional(v.number()),
+    // Request metadata for filtering
+    userId: v.optional(v.string()),         // Slack user ID who tagged IBOT
+    userName: v.optional(v.string()),       // Display name of the user
+    channelId: v.optional(v.string()),      // Slack channel ID
+    channelName: v.optional(v.string()),    // Channel name for display
+    threadTs: v.optional(v.string()),       // Thread timestamp (if in a thread)
+    isThread: v.optional(v.boolean()),      // Whether this was in a thread
+    imageCount: v.optional(v.number()),     // Number of images attached
   })
     .index("by_team", ["teamId"])
     .index("by_created", ["createdAt"])
-    .index("by_run_id", ["runId"]),
+    .index("by_run_id", ["runId"])
+    .index("by_channel", ["channelId"])
+    .index("by_user", ["userId"]),
 
   agentSteps: defineTable({
     runId: v.string(),

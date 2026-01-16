@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { verifySlackRequest } from "@/lib/slack/verify";
-import { addReaction, postMessage, removeReaction } from "@/lib/slack/actions";
+import {
+  addReaction,
+  postMessage,
+  removeReaction,
+  getChannelInfo,
+  getUserInfo,
+} from "@/lib/slack/actions";
 import {
   getThreadContext,
   getChannelContext,
@@ -10,6 +16,7 @@ import {
   type ImageAttachment,
 } from "@/lib/slack/context";
 import { runAgent } from "@/lib/agent";
+import type { RunMetadata } from "@/lib/observability";
 
 // Store processed event IDs to handle duplicate events from Slack
 const processedEvents = new Set<string>();
@@ -57,12 +64,18 @@ function removeBotMention(text: string): string {
 async function processEvent(event: SlackEvent["event"], teamId: string) {
   if (!event) return;
 
-  const { channel, ts, thread_ts, text } = event;
+  const { channel, ts, thread_ts, text, user } = event;
   const replyThreadTs = thread_ts || ts;
 
   try {
     // React with eyes emoji to show we're processing
     await addReaction(channel, ts, "eyes");
+
+    // Fetch metadata in parallel with context
+    const [channelInfo, userInfo] = await Promise.all([
+      getChannelInfo(channel),
+      getUserInfo(user),
+    ]);
 
     // Get conversation context and extract images from all messages
     let context: string;
@@ -83,8 +96,18 @@ async function processEvent(event: SlackEvent["event"], teamId: string) {
     // Extract the actual query by removing the bot mention
     const query = removeBotMention(text);
 
+    // Build metadata for observability
+    const metadata: RunMetadata = {
+      userId: user,
+      userName: userInfo?.realName || userInfo?.name,
+      channelId: channel,
+      channelName: channelInfo?.name,
+      threadTs: thread_ts,
+      isThread: !!thread_ts,
+    };
+
     // Run the AI agent with team ID for memory isolation and images
-    const response = await runAgent(query, context, { teamId, images });
+    const response = await runAgent(query, context, { teamId, images, metadata });
 
     // Post the response in the thread
     await postMessage(channel, response, replyThreadTs);

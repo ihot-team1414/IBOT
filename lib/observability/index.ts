@@ -8,13 +8,24 @@ export interface StepData {
   text?: string;
 }
 
+export interface RunMetadata {
+  userId?: string;
+  userName?: string;
+  channelId?: string;
+  channelName?: string;
+  threadTs?: string;
+  isThread?: boolean;
+  imageCount?: number;
+}
+
 /**
  * Log the start of an agent run
  */
 export async function logAgentRun(
   runId: string,
   teamId: string,
-  prompt: string
+  prompt: string,
+  metadata?: RunMetadata
 ): Promise<void> {
   if (!convex) {
     console.warn("[Observability] Convex client not available, skipping log");
@@ -26,6 +37,13 @@ export async function logAgentRun(
       runId,
       teamId,
       prompt,
+      userId: metadata?.userId,
+      userName: metadata?.userName,
+      channelId: metadata?.channelId,
+      channelName: metadata?.channelName,
+      threadTs: metadata?.threadTs,
+      isThread: metadata?.isThread,
+      imageCount: metadata?.imageCount,
     });
   } catch (error) {
     console.error("[Observability] Failed to log agent run:", error);
