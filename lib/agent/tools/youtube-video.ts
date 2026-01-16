@@ -2,6 +2,16 @@ import { z } from "zod";
 import { tool, generateText } from "ai";
 import { google } from "@ai-sdk/google";
 
+const VIDEO_SYSTEM_PROMPT = `You are a video analyzer providing summaries to another AI assistant. Your output will be used by that assistant to answer user questions.
+
+Keep your response:
+- Concise: 3-5 sentences for a summary, more only if specifically asked for details
+- Plain text: NO markdown formatting (no **bold**, no ## headers, no numbered lists unless essential)
+- Factual: Focus on what's shown/discussed in the video
+- Relevant: If this is an FRC/robotics video, emphasize the technical details that would matter to a robotics team
+
+Do not use phrases like "The video shows..." or "In this video..." - just describe the content directly.`;
+
 export const youtubeVideoTool = tool({
   description:
     "Watch and summarize a YouTube video. Use this when a user shares a YouTube link or asks about the contents of a YouTube video. The tool uses video understanding to analyze the video content and return a summary.",
@@ -29,6 +39,7 @@ export const youtubeVideoTool = tool({
 
       const result = await generateText({
         model: google("gemini-2.5-flash"),
+        system: VIDEO_SYSTEM_PROMPT,
         messages: [
           {
             role: "user",
