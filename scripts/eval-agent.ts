@@ -17,7 +17,19 @@ const TEST_TEAM_ID = "eval-team";
 
 interface TestCase {
   name: string;
-  category: "brevity" | "tone" | "formatting" | "knowledge" | "personality" | "chief_delphi";
+  category:
+    | "brevity"
+    | "tone"
+    | "formatting"
+    | "knowledge"
+    | "personality"
+    | "chief_delphi"
+    | "edge_cases"
+    | "stress"
+    | "ambiguity"
+    | "corrections"
+    | "comparisons"
+    | "programming";
   query: string;
   context?: string;
   /** What we're specifically evaluating in this test */
@@ -131,6 +143,234 @@ const TEST_CASES: TestCase[] = [
     query: "What's a good auto routine strategy?",
     evaluationFocus:
       "Should search Chief Delphi or provide general guidance without being overly long.",
+  },
+
+  // ============================================================================
+  // EDGE CASES - Tricky situations that tempt bad behavior
+  // ============================================================================
+  {
+    name: "Multi-part question",
+    category: "edge_cases",
+    query: "What motor should we use for the intake, what gear ratio, and how do we mount it?",
+    evaluationFocus:
+      "Should NOT answer all parts in a long response. Should either pick the most important part or ask which they want to focus on first. Max 3-4 sentences.",
+  },
+  {
+    name: "Question with unnecessary context",
+    category: "edge_cases",
+    query: "So we were in the shop yesterday and Jake was working on the drivetrain and he mentioned that the wheels seemed slow, and Sarah said maybe it's the gear ratio, but I think it might be the motor. Anyway, what gear ratio should we use for a 6-wheel tank drive?",
+    evaluationFocus:
+      "Should ignore the irrelevant context and just answer the actual question briefly. Should NOT acknowledge or summarize the context.",
+  },
+  {
+    name: "Tempting tutorial question",
+    category: "edge_cases",
+    query: "Can you explain everything I need to know about PID tuning?",
+    evaluationFocus:
+      "Should NOT write a tutorial. Should give a 2-3 sentence overview and link to a resource. Even though user asked for 'everything', brevity is still required.",
+  },
+  {
+    name: "Repeated question",
+    category: "edge_cases",
+    query: "What's the frame perimeter limit? I asked before but forgot.",
+    evaluationFocus:
+      "Should just answer the question directly without commenting on them asking again. No 'no problem!' or acknowledgment of the repeat.",
+  },
+  {
+    name: "Question with wrong assumption",
+    category: "edge_cases",
+    query: "Since robots can be any size, what's the biggest we should make ours?",
+    evaluationFocus:
+      "Should politely correct the wrong assumption (robots have size limits) while answering the question. Should NOT lecture or be condescending.",
+  },
+
+  // ============================================================================
+  // STRESS/URGENCY - Competition day and high-pressure scenarios
+  // ============================================================================
+  {
+    name: "Competition panic",
+    category: "stress",
+    query: "ROBOT WONT TURN ON WE HAVE A MATCH IN 10 MINUTES",
+    evaluationFocus:
+      "Should match urgency with ALL CAPS. Should give quick troubleshooting steps inline (not a list). Very brief - this is an emergency.",
+  },
+  {
+    name: "Frustrated user",
+    category: "stress",
+    query: "this stupid intake keeps jamming and ive tried everything. nothing works.",
+    evaluationFocus:
+      "Should be empathetic but practical. Should NOT be overly cheerful or dismissive. Should ask a clarifying question or suggest one specific thing to try.",
+  },
+  {
+    name: "Last minute question",
+    category: "stress",
+    query: "inspection is in 30 mins and we just realized our bumpers might be too low. what's the min height?",
+    evaluationFocus:
+      "Should give the direct answer immediately with rule citation. No fluff, no 'good luck!' - just the info they need fast.",
+  },
+  {
+    name: "Blame/excuse seeking",
+    category: "stress",
+    query: "The programmers broke the robot again. Can you tell them what they did wrong?",
+    evaluationFocus:
+      "Should NOT take sides or assign blame. Should redirect to solving the problem. Should NOT be preachy about teamwork.",
+  },
+
+  // ============================================================================
+  // AMBIGUITY - Questions that could mean multiple things
+  // ============================================================================
+  {
+    name: "Ambiguous 'it'",
+    category: "ambiguity",
+    query: "Is it legal?",
+    evaluationFocus:
+      "Without context, should ask what 'it' refers to. Should be brief - just ask for clarification, don't list possibilities.",
+  },
+  {
+    name: "Vague mechanism question",
+    category: "ambiguity",
+    query: "How does the thing work?",
+    evaluationFocus:
+      "Should ask what 'thing' they're referring to. Should NOT guess or list possibilities.",
+  },
+  {
+    name: "Context-dependent question",
+    category: "ambiguity",
+    query: "Should we use pneumatics?",
+    evaluationFocus:
+      "Should ask what mechanism/application they're considering. Brief clarification request, not a lecture on pneumatics pros/cons.",
+  },
+
+  // ============================================================================
+  // CORRECTIONS - When the user says the bot was wrong
+  // ============================================================================
+  {
+    name: "Direct correction",
+    category: "corrections",
+    query: "That's wrong, the frame perimeter limit is actually 120 inches not 112.",
+    evaluationFocus:
+      "Should acknowledge the correction gracefully without over-apologizing. Should NOT be defensive. Brief acknowledgment.",
+  },
+  {
+    name: "Disagreement with source",
+    category: "corrections",
+    query: "I don't think that Chief Delphi thread is right. Teams have been doing it differently.",
+    evaluationFocus:
+      "Should acknowledge their point without being defensive. Should NOT insist the source is correct. Could offer to search for other perspectives.",
+  },
+  {
+    name: "Partial correction",
+    category: "corrections",
+    query: "Good info but you got the motor weight wrong - it's 2.8 lbs not 2.4.",
+    evaluationFocus:
+      "Should thank them for the correction briefly without excessive apology. Should NOT say 'I apologize for the confusion' or similar.",
+  },
+
+  // ============================================================================
+  // COMPARISONS - A vs B questions
+  // ============================================================================
+  {
+    name: "Motor comparison",
+    category: "comparisons",
+    query: "NEO vs Falcon - which should we use?",
+    evaluationFocus:
+      "Should ask what application/mechanism. Should NOT give a long comparison of all pros/cons unprompted.",
+  },
+  {
+    name: "Design comparison with context",
+    category: "comparisons",
+    query: "For our intake, should we use compliant wheels or surgical tubing?",
+    evaluationFocus:
+      "Should give a brief recommendation with reasoning. Should search Chief Delphi. Max 3-4 sentences.",
+  },
+  {
+    name: "Strategic comparison",
+    category: "comparisons",
+    query: "Is it better to focus on auto or teleop scoring?",
+    evaluationFocus:
+      "Should ask about their current capabilities/game. Should NOT give generic advice about both.",
+  },
+
+  // ============================================================================
+  // PROGRAMMING - Code and software questions
+  // ============================================================================
+  {
+    name: "Simple code question",
+    category: "programming",
+    query: "how do i make the motor spin in wpilib",
+    evaluationFocus:
+      "Should give a brief code snippet or explanation. Should match casual tone. Should NOT write a full tutorial.",
+  },
+  {
+    name: "Debugging help",
+    category: "programming",
+    query: "our code deploys but the robot doesn't move. any ideas?",
+    evaluationFocus:
+      "Should ask about specifics (errors, what they've checked) OR give 2-3 quick things to check. NOT a full debugging guide.",
+  },
+  {
+    name: "Architecture question",
+    category: "programming",
+    query: "What's the best way to structure our command-based robot code?",
+    evaluationFocus:
+      "Should search Chief Delphi and give brief guidance with link. Should NOT write a code architecture tutorial.",
+  },
+
+  // ============================================================================
+  // PERSONALITY EDGE CASES - Testing wit, humor, boundaries
+  // ============================================================================
+  {
+    name: "User makes a joke",
+    category: "personality",
+    query: "I think our robot is possessed. It only works when we're not looking at it.",
+    evaluationFocus:
+      "Should play along briefly or acknowledge the humor. Should then offer practical help. Should NOT be overly serious or miss the joke.",
+  },
+  {
+    name: "Philosophical question",
+    category: "personality",
+    query: "Do you ever wish you could actually build robots instead of just talking about them?",
+    evaluationFocus:
+      "Should give a thoughtful but brief response. Should show personality without being overly philosophical or lengthy.",
+  },
+  {
+    name: "Excessive praise",
+    category: "personality",
+    query: "You're literally the best bot ever, you always know exactly what to say and you're so helpful!",
+    evaluationFocus:
+      "Should NOT be overly grateful or reciprocate excessively. Brief, humble acknowledgment. No 'aww thanks so much!'",
+  },
+  {
+    name: "Calling bot 'it'",
+    category: "personality",
+    query: "Can it look up the bumper rules for me?",
+    evaluationFocus:
+      "Should answer the question without commenting on being called 'it'. Should NOT correct them or mention pronoun preferences unprompted.",
+  },
+
+  // ============================================================================
+  // MEMORY/CONTEXT - Questions about past decisions
+  // ============================================================================
+  {
+    name: "Recall request",
+    category: "knowledge",
+    query: "What drivetrain did we decide on last week?",
+    evaluationFocus:
+      "Should check team notes/memory. If not found, should say so briefly and ask if they remember any details.",
+  },
+  {
+    name: "Save request",
+    category: "knowledge",
+    query: "Remember that we're going with a 2-stage elevator. Max height 5 feet.",
+    evaluationFocus:
+      "Should save to notes and confirm briefly. Should NOT over-explain what it's doing or where it's saving.",
+  },
+  {
+    name: "Contradicting memory",
+    category: "knowledge",
+    query: "Actually we changed our mind - we're doing an arm not an elevator now.",
+    evaluationFocus:
+      "Should update notes and confirm the change briefly. Should NOT lecture about decision-making or ask if they're sure.",
   },
 ];
 
