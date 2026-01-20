@@ -2,14 +2,168 @@
  * Agent Evaluation Script
  * Tests agent personality, response quality, and formatting against defined criteria
  *
- * Usage: npx tsx scripts/eval-agent.ts
+ * Usage: pnpm tsx scripts/eval-agent.ts
+ *        pnpm tsx scripts/eval-agent.ts --category=youtube_video
+ *        pnpm tsx scripts/eval-agent.ts --limit=5
  */
 
-import { generateText } from "ai";
+import { generateText, stepCountIs, tool } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { runAgent } from "../lib/agent";
+import { google } from "@ai-sdk/google";
+import { z } from "zod";
 
 const TEST_TEAM_ID = "eval-team";
+
+// ============================================================================
+// YouTube Video Agent (standalone, no bash-tool dependency)
+// ============================================================================
+
+const VIDEO_SYSTEM_PROMPT = `You are a video analyzer providing detailed observations to another AI assistant. Your output will be used to answer user questions about this specific video.
+
+CRITICAL: Extract SPECIFIC, VERIFIABLE details from this video. Do NOT provide generic descriptions.
+
+For FRC/robotics videos, always include when visible:
+- Team number (look for numbers on robot, banner, shirts, bumpers)
+- Specific mechanism types you can SEE (not guess): drivetrain type, intake style, shooter design
+- Colors, materials, and distinctive features visible in the video
+- Match scores, rankings, or event names if shown
+- Any text overlays, team names, or identifying information
+
+For any video:
+- Describe what you ACTUALLY SEE, not what you assume
+- Include specific timestamps for key moments if relevant
+- Note any on-screen text, logos, or identifiable information
+- If you cannot identify something, say so rather than guessing
+
+Keep your response:
+- Detailed but focused: Include specific observations that prove you watched THIS video
+- Plain text: NO markdown formatting
+- Factual: Only describe what is visually present, not assumptions
+
+Do not use phrases like "The video shows..." - just describe the content directly.`;
+
+const youtubeVideoTool = tool({
+  description:
+    "Watch and summarize a YouTube video. Use this when a user shares a YouTube link or asks about the contents of a YouTube video.",
+  inputSchema: z.object({
+    url: z.string().describe("The YouTube video URL"),
+    prompt: z
+      .string()
+      .default("Summarize this video, including the key points and main takeaways.")
+      .describe("Optional custom prompt for what to extract from the video."),
+  }),
+  execute: async ({ url, prompt }) => {
+    try {
+      const youtubeRegex =
+        /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/)[a-zA-Z0-9_-]+/;
+      if (!youtubeRegex.test(url)) {
+        return "Invalid YouTube URL. Please provide a valid YouTube video link.";
+      }
+
+      // Convert Shorts URLs to regular watch URLs (Gemini API doesn't support Shorts format)
+      let normalizedUrl = url;
+      const shortsMatch = url.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]+)/);
+      if (shortsMatch) {
+        normalizedUrl = `https://www.youtube.com/watch?v=${shortsMatch[1]}`;
+      }
+
+      const result = await generateText({
+        model: google("gemini-2.5-flash"),
+        system: VIDEO_SYSTEM_PROMPT,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "file", data: new URL(normalizedUrl), mediaType: "video/mp4" },
+            ],
+          },
+        ],
+      });
+
+      if (!result.text) {
+        return "Unable to analyze the video. The video may be unavailable, private, or too long to process.";
+      }
+
+      return `Video Analysis:\n\n${result.text}`;
+    } catch (error) {
+      console.error("YouTube video analysis failed:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return `Failed to analyze the YouTube video: ${errorMessage}. The video may be unavailable, private, age-restricted, or too long to process.`;
+    }
+  },
+});
+
+const YOUTUBE_AGENT_SYSTEM_PROMPT = `You are IBOT, a FIRST Robotics Competition teammate. Keep responses brief (3-5 sentences max).
+
+## Tone
+Match the energy AND formatting of whoever's asking:
+- all lowercase question → all lowercase response, casual vibe
+- ALL CAPS question → ALL CAPS response, urgent and brief
+- casual "yo" energy → match it with casual language
+
+## YouTube Videos
+When asked about a YouTube video:
+1. Use the youtubeVideo tool with a FOCUSED prompt that asks for SPECIFIC details:
+   - Always ask for team numbers, colors, and identifying information
+   - "what's happening in this match?" → ask for: "Describe the match action play-by-play. Include team numbers on both alliances, the current score if visible, specific scoring plays (who scored what and when), defensive plays, and the final outcome. Focus on WHAT IS HAPPENING, not robot capabilities."
+   - "tell me about their intake" → ask for intake type, wheel colors, actuation method, materials visible
+   - "what drivetrain?" → ask for drivetrain type, wheel count, module brand if visible
+   - "summarize this robot" → ask for team number, key mechanisms, distinctive features
+
+2. When responding, INCLUDE THE SPECIFIC DETAILS from the video:
+   - For matches: mention specific plays, scores, team numbers on BOTH alliances
+   - For robots: mention team number, specific colors and mechanisms observed
+   - If the tool couldn't identify something, say so honestly
+   - Do NOT make up details that weren't in the video analysis
+
+CRITICAL: Your response must contain specific details from THIS video, not generic FRC knowledge. If the video analysis found scores, team numbers, or specific plays, INCLUDE THEM.
+
+Use Slack mrkdwn formatting (*bold*, not **bold**).`;
+
+async function runYouTubeAgent(query: string): Promise<string> {
+  const result = await generateText({
+    model: anthropic("claude-haiku-4-5"),
+    system: YOUTUBE_AGENT_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: query }],
+    tools: { youtubeVideo: youtubeVideoTool },
+    stopWhen: stepCountIs(10),
+  });
+
+  return result.text || "I wasn't able to generate a response. Please try again.";
+}
+
+// ============================================================================
+// Full Agent (lazy loaded to avoid bash-tool issues when not needed)
+// ============================================================================
+
+let fullAgentModule: typeof import("../lib/agent") | null = null;
+
+async function runFullAgent(query: string, context: string): Promise<string> {
+  if (!fullAgentModule) {
+    try {
+      fullAgentModule = await import("../lib/agent");
+    } catch (error) {
+      throw new Error(
+        `Failed to load full agent (bash-tool compatibility issue with Node.js ${process.version}). ` +
+          `Use --category=youtube_video to run YouTube tests, or use an older Node.js version. ` +
+          `Original error: ${error}`
+      );
+    }
+  }
+  return fullAgentModule.runAgent(query, context, { teamId: TEST_TEAM_ID });
+}
+
+// ============================================================================
+// Agent Runner (chooses the right agent based on test category)
+// ============================================================================
+
+async function runAgentForTest(testCase: TestCase): Promise<string> {
+  if (testCase.category === "youtube_video") {
+    return runYouTubeAgent(testCase.query);
+  }
+  return runFullAgent(testCase.query, testCase.context || "");
+}
 
 // ============================================================================
 // Test Cases
@@ -29,7 +183,8 @@ interface TestCase {
     | "ambiguity"
     | "corrections"
     | "comparisons"
-    | "programming";
+    | "programming"
+    | "youtube_video";
   query: string;
   context?: string;
   /** What we're specifically evaluating in this test */
@@ -372,6 +527,52 @@ const TEST_CASES: TestCase[] = [
     evaluationFocus:
       "Should update notes and confirm the change briefly. Should NOT lecture about decision-making or ask if they're sure.",
   },
+
+  // ============================================================================
+  // YOUTUBE VIDEO - Video understanding and summarization
+  // ============================================================================
+  {
+    name: "YouTube Short - robot clip",
+    category: "youtube_video",
+    query: "what's happening in this video? https://www.youtube.com/shorts/0iWur_6749o",
+    evaluationFocus:
+      "Should handle YouTube Shorts URL. Should describe specific details visible in the short clip. Look for team numbers, robot features, or event context.",
+  },
+  {
+    name: "Robot reveal video - general summary",
+    category: "youtube_video",
+    query: "summarize this robot reveal for me https://www.youtube.com/watch?v=zRXDKFNY8hA",
+    evaluationFocus:
+      "Should provide specific details about the robot: team number if visible, drivetrain type, mechanisms shown, and any unique features. Should NOT be generic FRC descriptions.",
+  },
+  {
+    name: "Match video - what's happening",
+    category: "youtube_video",
+    query: "what's happening in this match? https://www.youtube.com/watch?v=ci6IKTfDxic",
+    evaluationFocus:
+      "Should describe specific match action: team numbers, scores if visible, key plays, alliance colors. Should match casual tone. Not a generic match description.",
+  },
+  {
+    name: "Specific mechanism question",
+    category: "youtube_video",
+    query: "What kind of intake does this robot have? https://www.youtube.com/watch?v=HaUuuaMJiQM",
+    evaluationFocus:
+      "Should focus specifically on the intake mechanism. Include specific details like wheel type, configuration, actuation method if visible. Not generic intake descriptions.",
+  },
+  {
+    name: "Casual video question",
+    category: "youtube_video",
+    query: "yo what's the coolest part of this robot? https://www.youtube.com/watch?v=zRXDKFNY8hA",
+    evaluationFocus:
+      "Should match casual tone. Should identify a SPECIFIC standout feature from THIS video and explain why it's interesting. Not generic FRC robot features.",
+  },
+  {
+    name: "Urgent video question (caps)",
+    category: "youtube_video",
+    query: "WHAT DRIVETRAIN ARE THEY USING https://www.youtube.com/watch?v=HaUuuaMJiQM",
+    evaluationFocus:
+      "Should match urgency with ALL CAPS. Should identify the specific drivetrain type visible in the video with details that prove the video was watched.",
+  },
 ];
 
 // ============================================================================
@@ -441,6 +642,84 @@ Provide your evaluation in this exact JSON format:
   "overall_feedback": "<1-2 sentence summary of biggest issues or strengths>"
 }`;
 
+// YouTube-specific evaluation prompt focused on video understanding quality
+const YOUTUBE_EVALUATION_PROMPT = `You are evaluating an AI assistant's response quality for YouTube video understanding.
+
+The assistant was asked a question about a YouTube video and should have watched/analyzed the video to answer.
+
+Rate the response on each criterion from 1-5, where:
+1 = Major issues
+2 = Significant issues  
+3 = Acceptable
+4 = Good
+5 = Excellent
+
+## Criteria
+
+### Content Specificity (weight: 2x)
+Does the response contain SPECIFIC details that could only come from watching the video?
+- 5: Multiple specific details (team numbers, specific mechanisms, colors, timestamps, scores)
+- 4: Some specific details that suggest video was watched
+- 3: Mix of specific and generic content
+- 2: Mostly generic FRC knowledge that could apply to any robot/match
+- 1: Completely generic or clearly hallucinated details
+
+### Answer Relevance (weight: 2x)
+Does the response directly answer what the user asked?
+- "What's their intake?" → Should describe the intake specifically, not the whole robot
+- "What's happening in this match?" → Should describe match action, not robot specs
+- "What drivetrain?" → Should name the drivetrain type with details
+- 5: Precisely answers the question with focused information
+- 3: Answers but includes unnecessary info or misses the focus
+- 1: Doesn't answer the actual question asked
+
+### Depth of Understanding (weight: 1.5x)
+Does the response show genuine technical understanding of what was shown?
+- Explains HOW mechanisms work, not just WHAT they are
+- Uses correct FRC terminology
+- Identifies design tradeoffs or notable engineering choices
+- 5: Deep technical insight with correct terminology
+- 3: Surface-level but accurate description
+- 1: Superficial or technically incorrect
+
+### Concision (weight: 1x)
+Is the response appropriately brief while still being complete?
+- 3-5 sentences is ideal
+- Leads with the answer
+- No filler or unnecessary context
+- 5: Perfect length, every sentence adds value
+- 3: Acceptable but could be tighter
+- 1: Way too long or too short to be useful
+
+### Tone Match (weight: 1x)
+Does the response match the user's communication style?
+- lowercase question → lowercase response
+- ALL CAPS → ALL CAPS (urgent)
+- casual "yo" → casual response
+- 5: Perfect tone match
+- 3: Neutral tone regardless of input
+- 1: Completely mismatched tone
+
+## Test Context
+Evaluation Focus: {evaluationFocus}
+
+## User Query
+{query}
+
+## Agent Response
+{response}
+
+## Your Evaluation
+Provide your evaluation in this exact JSON format:
+{
+  "content_specificity": { "score": <1-5>, "reason": "<brief reason>" },
+  "answer_relevance": { "score": <1-5>, "reason": "<brief reason>" },
+  "depth_of_understanding": { "score": <1-5>, "reason": "<brief reason>" },
+  "concision": { "score": <1-5>, "reason": "<brief reason>" },
+  "tone_match": { "score": <1-5>, "reason": "<brief reason>" },
+  "overall_feedback": "<1-2 sentence summary focusing on video understanding quality>"
+}`;
+
 // ============================================================================
 // Evaluation Logic
 // ============================================================================
@@ -450,7 +729,9 @@ interface CriterionScore {
   reason: string;
 }
 
-interface EvalResult {
+// Standard evaluation result for most categories
+interface StandardEvalResult {
+  type: "standard";
   brevity: CriterionScore;
   tone: CriterionScore;
   formatting: CriterionScore;
@@ -458,6 +739,19 @@ interface EvalResult {
   helpfulness: CriterionScore;
   overall_feedback: string;
 }
+
+// YouTube-specific evaluation result focused on video understanding
+interface YouTubeEvalResult {
+  type: "youtube";
+  content_specificity: CriterionScore;
+  answer_relevance: CriterionScore;
+  depth_of_understanding: CriterionScore;
+  concision: CriterionScore;
+  tone_match: CriterionScore;
+  overall_feedback: string;
+}
+
+type EvalResult = StandardEvalResult | YouTubeEvalResult;
 
 interface TestResult {
   testCase: TestCase;
@@ -471,7 +765,11 @@ async function evaluateResponse(
   testCase: TestCase,
   response: string
 ): Promise<EvalResult> {
-  const prompt = EVALUATION_PROMPT.replace("{category}", testCase.category)
+  const isYouTube = testCase.category === "youtube_video";
+  
+  const promptTemplate = isYouTube ? YOUTUBE_EVALUATION_PROMPT : EVALUATION_PROMPT;
+  const prompt = promptTemplate
+    .replace("{category}", testCase.category)
     .replace("{evaluationFocus}", testCase.evaluationFocus)
     .replace("{query}", testCase.query)
     .replace("{response}", response);
@@ -487,10 +785,35 @@ async function evaluateResponse(
     throw new Error("Failed to parse evaluation response");
   }
 
-  return JSON.parse(jsonMatch[0]) as EvalResult;
+  const parsed = JSON.parse(jsonMatch[0]);
+  
+  // Add type discriminator
+  if (isYouTube) {
+    return { type: "youtube", ...parsed } as YouTubeEvalResult;
+  }
+  return { type: "standard", ...parsed } as StandardEvalResult;
 }
 
 function calculateWeightedScore(evaluation: EvalResult): number {
+  if (evaluation.type === "youtube") {
+    const weights = {
+      content_specificity: 2,
+      answer_relevance: 2,
+      depth_of_understanding: 1.5,
+      concision: 1,
+      tone_match: 1,
+    };
+    const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
+    const weightedSum =
+      evaluation.content_specificity.score * weights.content_specificity +
+      evaluation.answer_relevance.score * weights.answer_relevance +
+      evaluation.depth_of_understanding.score * weights.depth_of_understanding +
+      evaluation.concision.score * weights.concision +
+      evaluation.tone_match.score * weights.tone_match;
+    return weightedSum / totalWeight;
+  }
+  
+  // Standard evaluation
   const weights = {
     brevity: 2,
     tone: 1.5,
@@ -498,17 +821,30 @@ function calculateWeightedScore(evaluation: EvalResult): number {
     personality: 1,
     helpfulness: 1,
   };
-
   const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
-
   const weightedSum =
     evaluation.brevity.score * weights.brevity +
     evaluation.tone.score * weights.tone +
     evaluation.formatting.score * weights.formatting +
     evaluation.personality.score * weights.personality +
     evaluation.helpfulness.score * weights.helpfulness;
-
   return weightedSum / totalWeight;
+}
+
+function printEvaluationScores(evaluation: EvalResult): void {
+  if (evaluation.type === "youtube") {
+    console.log(`  Content Specificity:    ${evaluation.content_specificity.score}/5 - ${evaluation.content_specificity.reason}`);
+    console.log(`  Answer Relevance:       ${evaluation.answer_relevance.score}/5 - ${evaluation.answer_relevance.reason}`);
+    console.log(`  Depth of Understanding: ${evaluation.depth_of_understanding.score}/5 - ${evaluation.depth_of_understanding.reason}`);
+    console.log(`  Concision:              ${evaluation.concision.score}/5 - ${evaluation.concision.reason}`);
+    console.log(`  Tone Match:             ${evaluation.tone_match.score}/5 - ${evaluation.tone_match.reason}`);
+  } else {
+    console.log(`  Brevity:     ${evaluation.brevity.score}/5 - ${evaluation.brevity.reason}`);
+    console.log(`  Tone:        ${evaluation.tone.score}/5 - ${evaluation.tone.reason}`);
+    console.log(`  Formatting:  ${evaluation.formatting.score}/5 - ${evaluation.formatting.reason}`);
+    console.log(`  Personality: ${evaluation.personality.score}/5 - ${evaluation.personality.reason}`);
+    console.log(`  Helpfulness: ${evaluation.helpfulness.score}/5 - ${evaluation.helpfulness.reason}`);
+  }
 }
 
 // ============================================================================
@@ -525,11 +861,9 @@ async function runEval(testCases: TestCase[]): Promise<TestResult[]> {
     console.log("=".repeat(60));
 
     try {
-      // Run the agent
+      // Run the agent (uses YouTube-specific agent for youtube_video tests)
       const startTime = Date.now();
-      const response = await runAgent(testCase.query, testCase.context || "", {
-        teamId: TEST_TEAM_ID,
-      });
+      const response = await runAgentForTest(testCase);
       const durationMs = Date.now() - startTime;
 
       console.log(`\nResponse (${(durationMs / 1000).toFixed(1)}s):`);
@@ -543,11 +877,7 @@ async function runEval(testCases: TestCase[]): Promise<TestResult[]> {
       const weightedScore = calculateWeightedScore(evaluation);
 
       console.log(`\nScores:`);
-      console.log(`  Brevity:     ${evaluation.brevity.score}/5 - ${evaluation.brevity.reason}`);
-      console.log(`  Tone:        ${evaluation.tone.score}/5 - ${evaluation.tone.reason}`);
-      console.log(`  Formatting:  ${evaluation.formatting.score}/5 - ${evaluation.formatting.reason}`);
-      console.log(`  Personality: ${evaluation.personality.score}/5 - ${evaluation.personality.reason}`);
-      console.log(`  Helpfulness: ${evaluation.helpfulness.score}/5 - ${evaluation.helpfulness.reason}`);
+      printEvaluationScores(evaluation);
       console.log(`\n  Weighted Score: ${weightedScore.toFixed(2)}/5`);
       console.log(`  Feedback: ${evaluation.overall_feedback}`);
 
@@ -560,17 +890,29 @@ async function runEval(testCases: TestCase[]): Promise<TestResult[]> {
       });
     } catch (error) {
       console.error(`\nError running test: ${error}`);
+      const errorEval: EvalResult = testCase.category === "youtube_video"
+        ? {
+            type: "youtube",
+            content_specificity: { score: 0, reason: "Error" },
+            answer_relevance: { score: 0, reason: "Error" },
+            depth_of_understanding: { score: 0, reason: "Error" },
+            concision: { score: 0, reason: "Error" },
+            tone_match: { score: 0, reason: "Error" },
+            overall_feedback: `Error: ${error}`,
+          }
+        : {
+            type: "standard",
+            brevity: { score: 0, reason: "Error" },
+            tone: { score: 0, reason: "Error" },
+            formatting: { score: 0, reason: "Error" },
+            personality: { score: 0, reason: "Error" },
+            helpfulness: { score: 0, reason: "Error" },
+            overall_feedback: `Error: ${error}`,
+          };
       results.push({
         testCase,
         response: `ERROR: ${error}`,
-        evaluation: {
-          brevity: { score: 0, reason: "Error" },
-          tone: { score: 0, reason: "Error" },
-          formatting: { score: 0, reason: "Error" },
-          personality: { score: 0, reason: "Error" },
-          helpfulness: { score: 0, reason: "Error" },
-          overall_feedback: `Error: ${error}`,
-        },
+        evaluation: errorEval,
         weightedScore: 0,
         durationMs: 0,
       });
@@ -605,14 +947,35 @@ function printSummary(results: TestResult[]) {
     console.log(`  ${category}: ${categoryAvg.toFixed(2)}/5`);
   }
 
-  // By criterion
-  console.log("\nScores by Criterion:");
-  const criteria = ["brevity", "tone", "formatting", "personality", "helpfulness"] as const;
-  for (const criterion of criteria) {
-    const criterionAvg =
-      validResults.reduce((sum, r) => sum + r.evaluation[criterion].score, 0) /
-      validResults.length;
-    console.log(`  ${criterion}: ${criterionAvg.toFixed(2)}/5`);
+  // By criterion (separated by eval type)
+  const standardResults = validResults.filter((r) => r.evaluation.type === "standard");
+  const youtubeResults = validResults.filter((r) => r.evaluation.type === "youtube");
+
+  if (standardResults.length > 0) {
+    console.log("\nScores by Criterion (Standard):");
+    const standardCriteria = ["brevity", "tone", "formatting", "personality", "helpfulness"] as const;
+    for (const criterion of standardCriteria) {
+      const criterionAvg =
+        standardResults.reduce((sum, r) => {
+          const eval_ = r.evaluation as StandardEvalResult;
+          return sum + eval_[criterion].score;
+        }, 0) / standardResults.length;
+      console.log(`  ${criterion}: ${criterionAvg.toFixed(2)}/5`);
+    }
+  }
+
+  if (youtubeResults.length > 0) {
+    console.log("\nScores by Criterion (YouTube Video Understanding):");
+    const youtubeCriteria = ["content_specificity", "answer_relevance", "depth_of_understanding", "concision", "tone_match"] as const;
+    for (const criterion of youtubeCriteria) {
+      const criterionAvg =
+        youtubeResults.reduce((sum, r) => {
+          const eval_ = r.evaluation as YouTubeEvalResult;
+          return sum + eval_[criterion].score;
+        }, 0) / youtubeResults.length;
+      const displayName = criterion.replace(/_/g, " ");
+      console.log(`  ${displayName}: ${criterionAvg.toFixed(2)}/5`);
+    }
   }
 
   // Worst performers
