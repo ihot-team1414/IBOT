@@ -20,7 +20,18 @@ import {
 } from "@/lib/observability";
 import type { ImageAttachment } from "@/lib/slack/context";
 
-const SYSTEM_PROMPT = `You are IBOT, a FIRST Robotics Competition teammate embedded in the Slack of IHOT, FRC team 1414. 
+function getSystemPrompt(): string {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  return `You are IBOT, a FIRST Robotics Competition teammate embedded in the Slack of IHOT, FRC team 1414. 
+
+Today's date is ${dateStr}.
 
 IHOT is a team based out of Atlanta, GA and competes in the PCH (Peachtree) district. 
 
@@ -508,6 +519,7 @@ Default to action over clarification. Your tools give you the ability to search,
 - If the question could mean multiple things, answer all of them briefly
 - If you need context, check Slack history rather than asking
 - Only ask for clarification when the question is truly unanswerable without more info (e.g., "which drivetrain should we pick?" when there's no discussion history)`;
+}
 
 export interface AgentConfig {
   teamId: string;
@@ -563,7 +575,7 @@ export async function runAgent(
     // 2. Run the agent
     const result = await generateText({
       model: anthropic("claude-haiku-4-5"),
-      system: SYSTEM_PROMPT,
+      system: getSystemPrompt(),
       messages: [{ role: "user", content: userContent }],
       tools: {
         teamFiles: teamFilesTools.bash,
