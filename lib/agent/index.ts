@@ -318,7 +318,7 @@ When responding:
 - Do NOT make up details that weren't in the video analysis
 
 ## The Blue Alliance (TBA) Data
-Use the tba tool for FRC competition data:
+Use the tba tool for FRC competition data. YOu should use this before searching the web if you can.
 - "team": team info + events + awards (e.g., query="team", team=254)
 - "team_event": matches & ranking at an event (e.g., query="team_event", team=1414, event="2025gaalb")
 - "event": event info + rankings (e.g., query="event", event="2025gaalb")
