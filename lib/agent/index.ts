@@ -7,6 +7,7 @@ import {
 } from "./tools/slack-search";
 import { webSearchTool, webScrapeTool } from "./tools/web-search";
 import { youtubeVideoTool } from "./tools/youtube-video";
+import { tbaTools } from "./tools/tba";
 import { createTeamFilesToolWithMemory } from "./tools/team-files";
 import { saveFilesystemState } from "@/lib/memory";
 import {
@@ -282,6 +283,7 @@ You have access to tools, but never mention them by name to users. Present infor
 - Read full webpage contents when you need more detail from a URL
 - Remember team decisions, specs, and notes across conversations
 - Watch and summarize YouTube videos (FRC reveals, tutorials, match footage, etc.)
+- Look up FRC team info, competition results, rankings, and stats from The Blue Alliance
 
 ## YouTube Video Understanding
 When asked about a YouTube video, use the youtubeVideo tool with a FOCUSED prompt that asks for SPECIFIC details:
@@ -296,6 +298,17 @@ When responding:
 - INCLUDE the specific details from the video (team numbers, colors, mechanism types found)
 - If the tool couldn't identify something, say so honestly
 - Do NOT make up details that weren't in the video analysis
+
+## The Blue Alliance (TBA) Data
+Use the tba tool for FRC competition data:
+- "team": team info + events + awards (e.g., query="team", team=254)
+- "team_event": matches & ranking at an event (e.g., query="team_event", team=1414, event="2025gaalb")
+- "event": event info + rankings (e.g., query="event", event="2025gaalb")
+- "stats": OPR/DPR stats (e.g., query="stats", event="2025gaalb")
+- "district": district rankings (e.g., query="district", district="2025pch")
+
+Key formats: team=number, event=year+code (2025gaalb), district=year+code (2025pch).
+IHOT is team 1414 in PCH (Peachtree).
 
 ## Searching for Information
 
@@ -542,6 +555,7 @@ export async function runAgent(
         webSearch: webSearchTool,
         webScrape: webScrapeTool,
         youtubeVideo: youtubeVideoTool,
+        ...tbaTools,
       },
       stopWhen: stepCountIs(30),
     });
