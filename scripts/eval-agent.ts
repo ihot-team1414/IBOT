@@ -184,7 +184,8 @@ interface TestCase {
     | "corrections"
     | "comparisons"
     | "programming"
-    | "youtube_video";
+    | "youtube_video"
+    | "tba";
   query: string;
   context?: string;
   /** What we're specifically evaluating in this test */
@@ -573,6 +574,80 @@ const TEST_CASES: TestCase[] = [
     evaluationFocus:
       "Should match urgency with ALL CAPS. Should identify the specific drivetrain type visible in the video with details that prove the video was watched.",
   },
+
+  // ============================================================================
+  // TBA - The Blue Alliance data queries
+  // ============================================================================
+  {
+    name: "Team info lookup",
+    category: "tba",
+    query: "who is team 254?",
+    evaluationFocus:
+      "Should return team info (Cheesy Poofs, San Jose, CA). Should NOT say 'I searched TBA' or 'According to The Blue Alliance'. Just present the info naturally.",
+  },
+  {
+    name: "Team info - our team",
+    category: "tba",
+    query: "tell me about team 1414",
+    evaluationFocus:
+      "Should return IHOT's info. Should present naturally without mentioning TBA or tools. Brief, conversational tone.",
+  },
+  {
+    name: "Team events question",
+    category: "tba",
+    query: "what competitions is 254 going to this year?",
+    evaluationFocus:
+      "Should list 254's events for the current year. Should NOT say 'I looked up on TBA'. Just list the events naturally.",
+  },
+  {
+    name: "District rankings",
+    category: "tba",
+    query: "where do we rank in PCH?",
+    evaluationFocus:
+      "Should look up 1414's PCH district ranking. Should present ranking naturally without tool attribution. Should use current year.",
+  },
+  {
+    name: "Event rankings question",
+    category: "tba",
+    query: "who's winning at the Peachtree district championship?",
+    evaluationFocus:
+      "Should look up PCH DCMP rankings. Present top teams naturally. No 'According to TBA' or similar.",
+  },
+  {
+    name: "OPR stats question",
+    category: "tba",
+    query: "what team has the best opr in michigan this year?",
+    evaluationFocus:
+      "Should search for a Michigan event and return OPR stats. Present naturally without mentioning data source.",
+  },
+  {
+    name: "Casual team question",
+    category: "tba",
+    query: "yo whats 118's deal",
+    evaluationFocus:
+      "Should match casual tone (lowercase). Return Robonauts info from Houston. No formal 'I searched TBA for...' language.",
+  },
+  {
+    name: "Urgent team question",
+    category: "tba",
+    query: "WHAT EVENTS IS 1678 AT THIS YEAR",
+    evaluationFocus:
+      "Should match urgency with caps. Return Citrus Circuits' events. Quick, direct response without tool attribution.",
+  },
+  {
+    name: "Historical team info",
+    category: "tba",
+    query: "when did team 148 start?",
+    evaluationFocus:
+      "Should return Robowranglers' rookie year. Present naturally: '148 started in [year]' not 'TBA shows their rookie year is...'",
+  },
+  {
+    name: "Team comparison setup",
+    category: "tba",
+    query: "are 254 and 1678 from the same state?",
+    evaluationFocus:
+      "Should look up both teams and answer directly. Both are from California. No tool attribution needed.",
+  },
 ];
 
 // ============================================================================
@@ -720,6 +795,83 @@ Provide your evaluation in this exact JSON format:
   "overall_feedback": "<1-2 sentence summary focusing on video understanding quality>"
 }`;
 
+// TBA-specific evaluation prompt focused on natural data presentation
+const TBA_EVALUATION_PROMPT = `You are evaluating an AI assistant's response quality for FRC competition data queries.
+
+The assistant was asked about team info, event rankings, match results, or other FRC data from The Blue Alliance.
+
+Rate the response on each criterion from 1-5, where:
+1 = Major issues
+2 = Significant issues  
+3 = Acceptable
+4 = Good
+5 = Excellent
+
+## Criteria
+
+### Natural Presentation (weight: 2x) - MOST IMPORTANT
+Does the response present information naturally WITHOUT mentioning tools or data sources?
+- 5: Completely natural, as if the bot just knows the info ("254 is the Cheesy Poofs from San Jose")
+- 4: Natural but slightly formal
+- 3: Mentions looking something up but doesn't name TBA
+- 2: Says "According to TBA" or "I searched The Blue Alliance"
+- 1: Explicitly describes using tools ("I used the tba tool to query...")
+
+CRITICAL: Any mention of "TBA", "The Blue Alliance", "I searched", "I looked up", "According to" should score 1-2.
+
+### Data Accuracy (weight: 2x)
+Does the response contain correct, specific FRC data?
+- Team info: correct name, location, rookie year
+- Rankings: actual rank numbers and records
+- Events: real event names and dates
+- 5: All data appears accurate and specific
+- 3: Data is present but vague or possibly outdated
+- 1: Data is clearly wrong or made up
+
+### Answer Relevance (weight: 1.5x)
+Does the response directly answer what was asked?
+- "Who is team 254?" → team info, not their event schedule
+- "What events are they going to?" → list events, not team bio
+- 5: Precisely answers the question
+- 3: Answers but includes unnecessary info
+- 1: Doesn't answer the actual question
+
+### Tone Match (weight: 1x)
+Does the response match the user's communication style?
+- lowercase casual → lowercase casual
+- ALL CAPS → urgent caps response
+- 5: Perfect tone match
+- 3: Neutral regardless of input
+- 1: Completely mismatched
+
+### Brevity (weight: 1x)
+Is the response appropriately concise?
+- 1-3 sentences for simple lookups
+- Max 5-6 for complex queries with multiple data points
+- 5: Perfect length
+- 3: Acceptable but wordy
+- 1: Way too long or too short
+
+## Test Context
+Evaluation Focus: {evaluationFocus}
+
+## User Query
+{query}
+
+## Agent Response
+{response}
+
+## Your Evaluation
+Provide your evaluation in this exact JSON format:
+{
+  "natural_presentation": { "score": <1-5>, "reason": "<brief reason>" },
+  "data_accuracy": { "score": <1-5>, "reason": "<brief reason>" },
+  "answer_relevance": { "score": <1-5>, "reason": "<brief reason>" },
+  "tone_match": { "score": <1-5>, "reason": "<brief reason>" },
+  "brevity": { "score": <1-5>, "reason": "<brief reason>" },
+  "overall_feedback": "<1-2 sentence summary focusing on natural presentation and data quality>"
+}`;
+
 // ============================================================================
 // Evaluation Logic
 // ============================================================================
@@ -751,7 +903,18 @@ interface YouTubeEvalResult {
   overall_feedback: string;
 }
 
-type EvalResult = StandardEvalResult | YouTubeEvalResult;
+// TBA-specific evaluation result focused on natural data presentation
+interface TBAEvalResult {
+  type: "tba";
+  natural_presentation: CriterionScore;
+  data_accuracy: CriterionScore;
+  answer_relevance: CriterionScore;
+  tone_match: CriterionScore;
+  brevity: CriterionScore;
+  overall_feedback: string;
+}
+
+type EvalResult = StandardEvalResult | YouTubeEvalResult | TBAEvalResult;
 
 interface TestResult {
   testCase: TestCase;
@@ -766,8 +929,13 @@ async function evaluateResponse(
   response: string
 ): Promise<EvalResult> {
   const isYouTube = testCase.category === "youtube_video";
+  const isTBA = testCase.category === "tba";
   
-  const promptTemplate = isYouTube ? YOUTUBE_EVALUATION_PROMPT : EVALUATION_PROMPT;
+  const promptTemplate = isYouTube 
+    ? YOUTUBE_EVALUATION_PROMPT 
+    : isTBA 
+      ? TBA_EVALUATION_PROMPT 
+      : EVALUATION_PROMPT;
   const prompt = promptTemplate
     .replace("{category}", testCase.category)
     .replace("{evaluationFocus}", testCase.evaluationFocus)
@@ -791,6 +959,9 @@ async function evaluateResponse(
   if (isYouTube) {
     return { type: "youtube", ...parsed } as YouTubeEvalResult;
   }
+  if (isTBA) {
+    return { type: "tba", ...parsed } as TBAEvalResult;
+  }
   return { type: "standard", ...parsed } as StandardEvalResult;
 }
 
@@ -810,6 +981,24 @@ function calculateWeightedScore(evaluation: EvalResult): number {
       evaluation.depth_of_understanding.score * weights.depth_of_understanding +
       evaluation.concision.score * weights.concision +
       evaluation.tone_match.score * weights.tone_match;
+    return weightedSum / totalWeight;
+  }
+  
+  if (evaluation.type === "tba") {
+    const weights = {
+      natural_presentation: 2,
+      data_accuracy: 2,
+      answer_relevance: 1.5,
+      tone_match: 1,
+      brevity: 1,
+    };
+    const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
+    const weightedSum =
+      evaluation.natural_presentation.score * weights.natural_presentation +
+      evaluation.data_accuracy.score * weights.data_accuracy +
+      evaluation.answer_relevance.score * weights.answer_relevance +
+      evaluation.tone_match.score * weights.tone_match +
+      evaluation.brevity.score * weights.brevity;
     return weightedSum / totalWeight;
   }
   
@@ -838,6 +1027,12 @@ function printEvaluationScores(evaluation: EvalResult): void {
     console.log(`  Depth of Understanding: ${evaluation.depth_of_understanding.score}/5 - ${evaluation.depth_of_understanding.reason}`);
     console.log(`  Concision:              ${evaluation.concision.score}/5 - ${evaluation.concision.reason}`);
     console.log(`  Tone Match:             ${evaluation.tone_match.score}/5 - ${evaluation.tone_match.reason}`);
+  } else if (evaluation.type === "tba") {
+    console.log(`  Natural Presentation: ${evaluation.natural_presentation.score}/5 - ${evaluation.natural_presentation.reason}`);
+    console.log(`  Data Accuracy:        ${evaluation.data_accuracy.score}/5 - ${evaluation.data_accuracy.reason}`);
+    console.log(`  Answer Relevance:     ${evaluation.answer_relevance.score}/5 - ${evaluation.answer_relevance.reason}`);
+    console.log(`  Tone Match:           ${evaluation.tone_match.score}/5 - ${evaluation.tone_match.reason}`);
+    console.log(`  Brevity:              ${evaluation.brevity.score}/5 - ${evaluation.brevity.reason}`);
   } else {
     console.log(`  Brevity:     ${evaluation.brevity.score}/5 - ${evaluation.brevity.reason}`);
     console.log(`  Tone:        ${evaluation.tone.score}/5 - ${evaluation.tone.reason}`);
@@ -950,6 +1145,7 @@ function printSummary(results: TestResult[]) {
   // By criterion (separated by eval type)
   const standardResults = validResults.filter((r) => r.evaluation.type === "standard");
   const youtubeResults = validResults.filter((r) => r.evaluation.type === "youtube");
+  const tbaResults = validResults.filter((r) => r.evaluation.type === "tba");
 
   if (standardResults.length > 0) {
     console.log("\nScores by Criterion (Standard):");
@@ -973,6 +1169,20 @@ function printSummary(results: TestResult[]) {
           const eval_ = r.evaluation as YouTubeEvalResult;
           return sum + eval_[criterion].score;
         }, 0) / youtubeResults.length;
+      const displayName = criterion.replace(/_/g, " ");
+      console.log(`  ${displayName}: ${criterionAvg.toFixed(2)}/5`);
+    }
+  }
+
+  if (tbaResults.length > 0) {
+    console.log("\nScores by Criterion (TBA Data Queries):");
+    const tbaCriteria = ["natural_presentation", "data_accuracy", "answer_relevance", "tone_match", "brevity"] as const;
+    for (const criterion of tbaCriteria) {
+      const criterionAvg =
+        tbaResults.reduce((sum, r) => {
+          const eval_ = r.evaluation as TBAEvalResult;
+          return sum + eval_[criterion].score;
+        }, 0) / tbaResults.length;
       const displayName = criterion.replace(/_/g, " ");
       console.log(`  ${displayName}: ${criterionAvg.toFixed(2)}/5`);
     }
