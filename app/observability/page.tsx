@@ -2,10 +2,9 @@
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { SpinnerGapIcon, WarningOctagonIcon, CheckCircleIcon } from "@phosphor-icons/react";
+import { SpinnerGapIcon, WarningOctagonIcon, CheckCircleIcon, WrenchIcon, ChatIcon, BrainIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils";
@@ -38,11 +37,31 @@ type AgentStep = {
   stepIndex: number;
   type: "tool_call" | "tool_result" | "text";
   toolName?: string;
+  toolCallId?: string;
   toolArgs?: string;
   toolResult?: string;
   text?: string;
   createdAt: number;
 };
+
+// Grouped step types for display
+type GroupedToolCall = {
+  type: "tool";
+  toolName: string;
+  toolCallId?: string;
+  args?: string;
+  result?: string;
+  stepIndex: number;
+};
+
+type TextStep = {
+  type: "text";
+  text: string;
+  stepIndex: number;
+  isFinalResponse: boolean;
+};
+
+type GroupedStep = GroupedToolCall | TextStep;
 
 type RunWithSteps = AgentRun & {
   steps: AgentStep[];
@@ -93,88 +112,135 @@ function formatJson(jsonString: string | undefined): string {
   }
 }
 
-function StepCard({ step }: { step: AgentStep }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const getStepIcon = () => {
-    switch (step.type) {
-      case "tool_call":
-        return "🔧";
-      case "tool_result":
-        return "📤";
-      case "text":
-        return "💬";
-    }
-  };
-
-  const getStepTitle = () => {
-    switch (step.type) {
-      case "tool_call":
-        return `${step.toolName}`;
-      case "tool_result":
-        return `${step.toolName} Result`;
-      case "text":
-        return "Text Output";
-    }
-  };
-
-  const getContentLabel = () => {
-    switch (step.type) {
-      case "tool_call":
-        return "Arguments:";
-      case "tool_result":
-        return "Result:";
-      case "text":
-        return null;
-    }
-  };
-
-  const getContent = () => {
-    switch (step.type) {
-      case "tool_call":
-        return formatJson(step.toolArgs);
-      case "tool_result":
-        return formatJson(step.toolResult);
-      case "text":
-        return step.text;
-    }
-  };
-
-  const content = getContent();
-  const contentLabel = getContentLabel();
-  const formattedContent = content ? (
-    <div>
-      {contentLabel && (
-        <span className="text-xs text-muted-foreground font-medium">{contentLabel}</span>
-      )}
-      <pre className="whitespace-pre-wrap text-xs bg-muted p-2 rounded overflow-auto max-h-96 font-mono mt-1">
-        {expanded ? content : truncateText(content, 500)}
-      </pre>
-    </div>
-  ) : null;
-
-  const needsExpansion = content && content.length > 500;
-
+function ToolCallCard({ step }: { step: GroupedToolCall }) {
+  const formattedArgs = formatJson(step.args);
+  const formattedResult = formatJson(step.result);
+  
   return (
-    <div className="border-l-2 border-muted pl-4 py-2">
-      <div className="flex items-center gap-2 mb-1">
-        <span>{getStepIcon()}</span>
-        <span className="font-medium text-sm">{getStepTitle()}</span>
-        <span className="text-xs text-muted-foreground">Step {step.stepIndex}</span>
+    <div className="border border-border rounded-lg overflow-hidden">
+      {/* Tool call header */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50">
+        <WrenchIcon size={16} className="text-muted-foreground" />
+        <span className="font-medium font-mono text-sm">{step.toolName}</span>
       </div>
-      {formattedContent}
-      {needsExpansion && (
-        <Button
-          variant="ghost"
-          size="xs"
-          onClick={() => setExpanded(!expanded)}
-          className="mt-1"
-        >
-          {expanded ? "Show less" : "Show more"}
-        </Button>
+      
+      {/* Arguments section */}
+      {formattedArgs && (
+        <div className="px-3 py-2 border-t border-border">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Arguments</span>
+          </div>
+          <pre className="whitespace-pre-wrap text-xs bg-muted p-2 rounded overflow-auto max-h-64 font-mono">
+            {formattedArgs}
+          </pre>
+        </div>
+      )}
+      
+      {/* Result section */}
+      {formattedResult && (
+        <div className="px-3 py-2 border-t border-border">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Result</span>
+          </div>
+          <pre className="whitespace-pre-wrap text-xs bg-muted p-2 rounded overflow-auto max-h-64 font-mono">
+            {formattedResult}
+          </pre>
+        </div>
+      )}
+      
+      {/* Show message if no result yet */}
+      {!formattedResult && (
+        <div className="px-3 py-2 border-t border-border">
+          <span className="text-xs text-muted-foreground italic">Awaiting result...</span>
+        </div>
       )}
     </div>
   );
+}
+
+function TextStepCard({ step }: { step: TextStep }) {
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50">
+        {step.isFinalResponse ? (
+          <ChatIcon size={16} className="text-muted-foreground" />
+        ) : (
+          <BrainIcon size={16} className="text-muted-foreground" />
+        )}
+        <span className="font-medium text-sm">
+          {step.isFinalResponse ? "Response" : "Reasoning"}
+        </span>
+      </div>
+      <div className="px-3 py-2">
+        <p className="text-sm whitespace-pre-wrap">
+          {step.text}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function GroupedStepCard({ step }: { step: GroupedStep }) {
+  if (step.type === "tool") {
+    return <ToolCallCard step={step} />;
+  }
+  return <TextStepCard step={step} />;
+}
+
+// Group steps: pair tool_calls with their tool_results, identify final response
+function groupSteps(steps: AgentStep[]): GroupedStep[] {
+  const grouped: GroupedStep[] = [];
+  const toolCallMap = new Map<string, GroupedToolCall>();
+  
+  // First pass: create tool call entries and map by toolCallId
+  for (const step of steps) {
+    if (step.type === "tool_call") {
+      const toolStep: GroupedToolCall = {
+        type: "tool",
+        toolName: step.toolName || "unknown",
+        toolCallId: step.toolCallId,
+        args: step.toolArgs,
+        stepIndex: step.stepIndex,
+      };
+      
+      if (step.toolCallId) {
+        toolCallMap.set(step.toolCallId, toolStep);
+      }
+      grouped.push(toolStep);
+    } else if (step.type === "tool_result") {
+      // Find matching tool call by toolCallId
+      if (step.toolCallId && toolCallMap.has(step.toolCallId)) {
+        const toolStep = toolCallMap.get(step.toolCallId)!;
+        toolStep.result = step.toolResult;
+      } else {
+        // Fallback: create standalone result (shouldn't happen normally)
+        grouped.push({
+          type: "tool",
+          toolName: step.toolName || "unknown",
+          toolCallId: step.toolCallId,
+          result: step.toolResult,
+          stepIndex: step.stepIndex,
+        });
+      }
+    } else if (step.type === "text" && step.text) {
+      grouped.push({
+        type: "text",
+        text: step.text,
+        stepIndex: step.stepIndex,
+        isFinalResponse: false, // Will be set below
+      });
+    }
+  }
+  
+  // Mark the last text step as the final response
+  for (let i = grouped.length - 1; i >= 0; i--) {
+    if (grouped[i].type === "text") {
+      (grouped[i] as TextStep).isFinalResponse = true;
+      break;
+    }
+  }
+  
+  return grouped;
 }
 
 function RunDetail({ runId }: { runId: string }) {
@@ -188,68 +254,43 @@ function RunDetail({ runId }: { runId: string }) {
     return <div className="p-4 text-muted-foreground">Run not found</div>;
   }
 
+  const groupedSteps = groupSteps(run.steps);
+
   return (
-    <div className="space-y-4 p-4 bg-muted/30 rounded-md">
+    <div className="space-y-4">
       {/* Metadata grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-        {run.userName && (
-          <div>
-            <span className="text-muted-foreground text-xs">User</span>
-            <p className="font-medium">{run.userName}</p>
-            {run.userId && <p className="text-xs text-muted-foreground">{run.userId}</p>}
-          </div>
-        )}
-        {run.channelName && (
-          <div>
-            <span className="text-muted-foreground text-xs">Channel</span>
-            <p className="font-medium">#{run.channelName}</p>
-            {run.isThread && <p className="text-xs text-muted-foreground">In thread</p>}
-          </div>
-        )}
         <div>
-          <span className="text-muted-foreground text-xs">Duration</span>
+          <span className="text-muted-foreground text-xs uppercase font-medium tracking-wide">Duration</span>
           <p className="font-medium">{formatDuration(run.durationMs)}</p>
         </div>
         <div>
-          <span className="text-muted-foreground text-xs">Steps</span>
-          <p className="font-medium">{run.stepCount}</p>
+          <span className="text-muted-foreground text-xs uppercase font-medium tracking-wide">Tool Calls</span>
+          <p className="font-medium">{groupedSteps.filter(s => s.type === "tool").length}</p>
         </div>
         {run.imageCount && run.imageCount > 0 && (
           <div>
-            <span className="text-muted-foreground text-xs">Images</span>
+            <span className="text-muted-foreground text-xs uppercase font-medium tracking-wide">Images</span>
             <p className="font-medium">{run.imageCount}</p>
           </div>
         )}
       </div>
-
-      <div>
-        <h4 className="font-medium text-sm text-muted-foreground mb-1">Full Prompt</h4>
-        <p className="text-sm">{run.prompt}</p>
-      </div>
-
-      {run.response && (
-        <div>
-          <h4 className="font-medium text-sm text-muted-foreground mb-1">Response</h4>
-          <p className="text-sm whitespace-pre-wrap">{run.response}</p>
-        </div>
-      )}
-
       {run.errorMessage && (
         <div>
-          <h4 className="font-medium text-sm text-destructive mb-1">Error</h4>
+          <h4 className="text-xs text-destructive uppercase font-medium tracking-wide mb-1">Error</h4>
           <p className="text-sm text-destructive">{run.errorMessage}</p>
         </div>
       )}
 
       <div>
-        <h4 className="font-medium text-sm text-muted-foreground mb-2">
-          Steps ({run.steps.length})
+        <h4 className="text-xs text-muted-foreground uppercase font-medium tracking-wide mb-2">
+          Execution Trace
         </h4>
-        <div className="space-y-2">
-          {run.steps.map((step) => (
-            <StepCard key={step._id} step={step} />
+        <div className="space-y-3">
+          {groupedSteps.map((step, idx) => (
+            <GroupedStepCard key={idx} step={step} />
           ))}
-          {run.steps.length === 0 && (
+          {groupedSteps.length === 0 && (
             <p className="text-sm text-muted-foreground">No steps recorded</p>
           )}
         </div>

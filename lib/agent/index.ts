@@ -734,11 +734,12 @@ export async function runAgent(
       // Log tool calls
       if (step.toolCalls && step.toolCalls.length > 0) {
         for (const toolCall of step.toolCalls) {
-          // Cast to access args property safely
-          const toolCallAny = toolCall as { toolName: string; args?: unknown };
+          // Cast to access args and toolCallId properties safely
+          const toolCallAny = toolCall as { toolName: string; toolCallId: string; args?: unknown };
           await logAgentStep(runId, stepIndex++, {
             type: "tool_call",
             toolName: toolCall.toolName,
+            toolCallId: toolCallAny.toolCallId,
             toolArgs: toolCallAny.args,
           });
         }
@@ -747,11 +748,12 @@ export async function runAgent(
       // Log tool results
       if (step.toolResults && step.toolResults.length > 0) {
         for (const toolResult of step.toolResults) {
-          // Cast to access result property safely
-          const toolResultAny = toolResult as { toolName: string; result?: unknown };
+          // Cast to access result and toolCallId properties safely
+          const toolResultAny = toolResult as { toolName: string; toolCallId: string; result?: unknown };
           await logAgentStep(runId, stepIndex++, {
             type: "tool_result",
             toolName: toolResult.toolName,
+            toolCallId: toolResultAny.toolCallId,
             toolResult: toolResultAny.result,
           });
         }

@@ -3,6 +3,7 @@ import { convex, api } from "@/lib/memory/convex";
 export interface StepData {
   type: "tool_call" | "tool_result" | "text";
   toolName?: string;
+  toolCallId?: string;
   toolArgs?: unknown;
   toolResult?: unknown;
   text?: string;
@@ -69,6 +70,7 @@ export async function logAgentStep(
       stepIndex,
       type: step.type,
       toolName: step.toolName,
+      toolCallId: step.toolCallId,
       toolArgs: step.toolArgs ? JSON.stringify(step.toolArgs) : undefined,
       toolResult: step.toolResult ? JSON.stringify(step.toolResult) : undefined,
       text: step.text,

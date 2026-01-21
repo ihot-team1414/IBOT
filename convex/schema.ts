@@ -45,6 +45,7 @@ export default defineSchema({
     stepIndex: v.number(),
     type: v.union(v.literal("tool_call"), v.literal("tool_result"), v.literal("text")),
     toolName: v.optional(v.string()),
+    toolCallId: v.optional(v.string()), // Links tool_call to tool_result
     toolArgs: v.optional(v.string()),
     toolResult: v.optional(v.string()),
     text: v.optional(v.string()),
