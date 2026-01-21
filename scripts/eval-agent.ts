@@ -12,7 +12,8 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { z } from "zod";
 
-const TEST_TEAM_ID = "eval-team";
+// Use the real team ID to test against backfilled data
+const TEST_TEAM_ID = "TCFK1FD5K";
 
 // ============================================================================
 // YouTube Video Agent (standalone, no bash-tool dependency)
@@ -185,7 +186,8 @@ interface TestCase {
     | "comparisons"
     | "programming"
     | "youtube_video"
-    | "tba";
+    | "tba"
+    | "team_files";
   query: string;
   context?: string;
   /** What we're specifically evaluating in this test */
@@ -648,6 +650,94 @@ const TEST_CASES: TestCase[] = [
     evaluationFocus:
       "Should look up both teams and answer directly. Both are from California. No tool attribution needed.",
   },
+
+  // ============================================================================
+  // TEAM FILES - Knowledge base recall and usage
+  // ============================================================================
+  {
+    name: "Robot specs recall - drivetrain",
+    category: "team_files",
+    query: "What drivetrain are we using this year?",
+    evaluationFocus:
+      "MUST check team-files/notes before answering. Should find drivetrain info in robot-specs.md or decisions.md. Answer should reference specific details from notes.",
+  },
+  {
+    name: "Robot specs recall - mechanism",
+    category: "team_files",
+    query: "How tall is our elevator?",
+    evaluationFocus:
+      "Should check team files for elevator specs. If found, give specific measurement. If not found, should say so briefly rather than guessing.",
+  },
+  {
+    name: "Team decisions recall",
+    category: "team_files",
+    query: "What did we decide about the intake design?",
+    evaluationFocus:
+      "MUST check team-files/notes (decisions.md or robot-specs.md) before answering. Should find intake decisions and present them naturally without mentioning file names.",
+  },
+  {
+    name: "Strategy recall",
+    category: "team_files",
+    query: "What's our auto strategy?",
+    evaluationFocus:
+      "Should check strategy.md for auto strategy info. Present findings naturally. If no specific auto strategy is documented, should check Slack or say so.",
+  },
+  {
+    name: "Action items recall",
+    category: "team_files",
+    query: "What tasks are still pending?",
+    evaluationFocus:
+      "Should check todo.md for pending tasks. List relevant items naturally without exposing file structure. Keep response brief.",
+  },
+  {
+    name: "Meeting notes recall",
+    category: "team_files",
+    query: "What did we discuss in the last meeting?",
+    evaluationFocus:
+      "Should check meetings/ folder for recent meeting notes. Present key points from the most recent meeting naturally.",
+  },
+  {
+    name: "Proactive memory check - ambiguous",
+    category: "team_files",
+    query: "Should we use NEO or Falcon for the shooter?",
+    evaluationFocus:
+      "Should check team files FIRST to see if a decision was already made about shooter motors. If found, reference the existing decision. If not, then ask clarifying questions.",
+  },
+  {
+    name: "Casual spec question",
+    category: "team_files",
+    query: "yo whats the gear ratio we're using",
+    evaluationFocus:
+      "Should match casual tone AND check team files for gear ratio specs. Present findings in casual lowercase style.",
+  },
+  {
+    name: "Urgent spec question",
+    category: "team_files",
+    query: "WHAT SIZE WHEELS ARE WE USING",
+    evaluationFocus:
+      "Should match urgency AND check team files quickly. If wheel size is documented, give it directly in caps. Don't waste time with pleasantries.",
+  },
+  {
+    name: "Cross-reference check",
+    category: "team_files",
+    query: "Is our frame perimeter legal?",
+    evaluationFocus:
+      "Should check team files for frame dimensions AND cross-reference with game manual rules. Combine both sources to answer definitively.",
+  },
+  {
+    name: "Memory before Slack",
+    category: "team_files",
+    query: "What motors are we using for the arm?",
+    evaluationFocus:
+      "Should check team-files BEFORE searching Slack. If info is in notes, use that. Only search Slack if notes don't have the answer.",
+  },
+  {
+    name: "Specific date recall",
+    category: "team_files",
+    query: "What happened at the January 15th meeting?",
+    evaluationFocus:
+      "Should check meetings/2026-01-15.md specifically. Present meeting notes naturally without mentioning file path.",
+  },
 ];
 
 // ============================================================================
@@ -872,6 +962,82 @@ Provide your evaluation in this exact JSON format:
   "overall_feedback": "<1-2 sentence summary focusing on natural presentation and data quality>"
 }`;
 
+// Team Files evaluation prompt focused on memory recall and proactive checking
+const TEAM_FILES_EVALUATION_PROMPT = `You are evaluating an AI assistant's use of team knowledge files (notes, specs, decisions).
+
+The assistant should proactively check team-files/notes when asked about team-specific information like robot specs, decisions, strategy, or past discussions.
+
+Rate the response on each criterion from 1-5, where:
+1 = Major issues
+2 = Significant issues  
+3 = Acceptable
+4 = Good
+5 = Excellent
+
+## Criteria
+
+### Memory Usage (weight: 2.5x) - MOST IMPORTANT
+Did the assistant check team files BEFORE answering or asking clarifying questions?
+- 5: Clearly checked notes first, found relevant info, used it in response
+- 4: Checked notes but may have missed some relevant info
+- 3: Checked notes but didn't find info (acceptable if info truly not there)
+- 2: Did not check notes, went straight to Slack search or clarifying questions
+- 1: Did not check notes at all, answered from general knowledge or asked user
+
+CRITICAL: For questions about team decisions, robot specs, or past discussions, the agent MUST check team-files BEFORE anything else.
+
+### Information Accuracy (weight: 2x)
+If the assistant found information in notes, is it presented accurately?
+- 5: Accurate, specific details that match what would be in team notes
+- 4: Mostly accurate with minor omissions
+- 3: Partially accurate or vague
+- 2: May have misinterpreted or confused information
+- 1: Information is clearly wrong or made up
+
+### Natural Presentation (weight: 1.5x)
+Does the response present team information naturally?
+- 5: Completely natural ("we're using swerve drive with L2 gearing")
+- 4: Natural but slightly formal
+- 3: Mentions checking notes but doesn't expose file paths
+- 2: Exposes file names or paths ("I found in robot-specs.md...")
+- 1: Describes tool usage ("I used the teamFiles tool to grep...")
+
+### Answer Completeness (weight: 1x)
+Does the response fully answer the question with available information?
+- 5: Complete answer with all relevant details from notes
+- 4: Good answer with most relevant details
+- 3: Partial answer, missing some available info
+- 2: Incomplete, missed important documented info
+- 1: Did not answer or gave generic response ignoring notes
+
+### Tone Match (weight: 1x)
+Does the response match the user's communication style?
+- lowercase casual → lowercase casual
+- ALL CAPS → urgent caps response
+- 5: Perfect tone match
+- 3: Neutral regardless of input
+- 1: Completely mismatched
+
+## Test Context
+Evaluation Focus: {evaluationFocus}
+
+## User Query
+{query}
+
+## Agent Response
+{response}
+
+## Your Evaluation
+Provide your evaluation in this exact JSON format:
+{
+  "memory_usage": { "score": <1-5>, "reason": "<brief reason - did it check notes first?>" },
+  "information_accuracy": { "score": <1-5>, "reason": "<brief reason>" },
+  "natural_presentation": { "score": <1-5>, "reason": "<brief reason>" },
+  "answer_completeness": { "score": <1-5>, "reason": "<brief reason>" },
+  "tone_match": { "score": <1-5>, "reason": "<brief reason>" },
+  "overall_feedback": "<1-2 sentence summary focusing on whether it checked team files appropriately>"
+}`;
+
 // ============================================================================
 // Evaluation Logic
 // ============================================================================
@@ -914,7 +1080,18 @@ interface TBAEvalResult {
   overall_feedback: string;
 }
 
-type EvalResult = StandardEvalResult | YouTubeEvalResult | TBAEvalResult;
+// Team Files evaluation result focused on memory usage and recall
+interface TeamFilesEvalResult {
+  type: "team_files";
+  memory_usage: CriterionScore;
+  information_accuracy: CriterionScore;
+  natural_presentation: CriterionScore;
+  answer_completeness: CriterionScore;
+  tone_match: CriterionScore;
+  overall_feedback: string;
+}
+
+type EvalResult = StandardEvalResult | YouTubeEvalResult | TBAEvalResult | TeamFilesEvalResult;
 
 interface TestResult {
   testCase: TestCase;
@@ -930,12 +1107,15 @@ async function evaluateResponse(
 ): Promise<EvalResult> {
   const isYouTube = testCase.category === "youtube_video";
   const isTBA = testCase.category === "tba";
+  const isTeamFiles = testCase.category === "team_files";
   
   const promptTemplate = isYouTube 
     ? YOUTUBE_EVALUATION_PROMPT 
     : isTBA 
-      ? TBA_EVALUATION_PROMPT 
-      : EVALUATION_PROMPT;
+      ? TBA_EVALUATION_PROMPT
+      : isTeamFiles
+        ? TEAM_FILES_EVALUATION_PROMPT
+        : EVALUATION_PROMPT;
   const prompt = promptTemplate
     .replace("{category}", testCase.category)
     .replace("{evaluationFocus}", testCase.evaluationFocus)
@@ -961,6 +1141,9 @@ async function evaluateResponse(
   }
   if (isTBA) {
     return { type: "tba", ...parsed } as TBAEvalResult;
+  }
+  if (isTeamFiles) {
+    return { type: "team_files", ...parsed } as TeamFilesEvalResult;
   }
   return { type: "standard", ...parsed } as StandardEvalResult;
 }
@@ -1001,6 +1184,24 @@ function calculateWeightedScore(evaluation: EvalResult): number {
       evaluation.brevity.score * weights.brevity;
     return weightedSum / totalWeight;
   }
+
+  if (evaluation.type === "team_files") {
+    const weights = {
+      memory_usage: 2.5,
+      information_accuracy: 2,
+      natural_presentation: 1.5,
+      answer_completeness: 1,
+      tone_match: 1,
+    };
+    const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
+    const weightedSum =
+      evaluation.memory_usage.score * weights.memory_usage +
+      evaluation.information_accuracy.score * weights.information_accuracy +
+      evaluation.natural_presentation.score * weights.natural_presentation +
+      evaluation.answer_completeness.score * weights.answer_completeness +
+      evaluation.tone_match.score * weights.tone_match;
+    return weightedSum / totalWeight;
+  }
   
   // Standard evaluation
   const weights = {
@@ -1033,6 +1234,12 @@ function printEvaluationScores(evaluation: EvalResult): void {
     console.log(`  Answer Relevance:     ${evaluation.answer_relevance.score}/5 - ${evaluation.answer_relevance.reason}`);
     console.log(`  Tone Match:           ${evaluation.tone_match.score}/5 - ${evaluation.tone_match.reason}`);
     console.log(`  Brevity:              ${evaluation.brevity.score}/5 - ${evaluation.brevity.reason}`);
+  } else if (evaluation.type === "team_files") {
+    console.log(`  Memory Usage:         ${evaluation.memory_usage.score}/5 - ${evaluation.memory_usage.reason}`);
+    console.log(`  Info Accuracy:        ${evaluation.information_accuracy.score}/5 - ${evaluation.information_accuracy.reason}`);
+    console.log(`  Natural Presentation: ${evaluation.natural_presentation.score}/5 - ${evaluation.natural_presentation.reason}`);
+    console.log(`  Answer Completeness:  ${evaluation.answer_completeness.score}/5 - ${evaluation.answer_completeness.reason}`);
+    console.log(`  Tone Match:           ${evaluation.tone_match.score}/5 - ${evaluation.tone_match.reason}`);
   } else {
     console.log(`  Brevity:     ${evaluation.brevity.score}/5 - ${evaluation.brevity.reason}`);
     console.log(`  Tone:        ${evaluation.tone.score}/5 - ${evaluation.tone.reason}`);
@@ -1085,25 +1292,48 @@ async function runEval(testCases: TestCase[]): Promise<TestResult[]> {
       });
     } catch (error) {
       console.error(`\nError running test: ${error}`);
-      const errorEval: EvalResult = testCase.category === "youtube_video"
-        ? {
-            type: "youtube",
-            content_specificity: { score: 0, reason: "Error" },
-            answer_relevance: { score: 0, reason: "Error" },
-            depth_of_understanding: { score: 0, reason: "Error" },
-            concision: { score: 0, reason: "Error" },
-            tone_match: { score: 0, reason: "Error" },
-            overall_feedback: `Error: ${error}`,
-          }
-        : {
-            type: "standard",
-            brevity: { score: 0, reason: "Error" },
-            tone: { score: 0, reason: "Error" },
-            formatting: { score: 0, reason: "Error" },
-            personality: { score: 0, reason: "Error" },
-            helpfulness: { score: 0, reason: "Error" },
-            overall_feedback: `Error: ${error}`,
-          };
+      let errorEval: EvalResult;
+      if (testCase.category === "youtube_video") {
+        errorEval = {
+          type: "youtube",
+          content_specificity: { score: 0, reason: "Error" },
+          answer_relevance: { score: 0, reason: "Error" },
+          depth_of_understanding: { score: 0, reason: "Error" },
+          concision: { score: 0, reason: "Error" },
+          tone_match: { score: 0, reason: "Error" },
+          overall_feedback: `Error: ${error}`,
+        };
+      } else if (testCase.category === "tba") {
+        errorEval = {
+          type: "tba",
+          natural_presentation: { score: 0, reason: "Error" },
+          data_accuracy: { score: 0, reason: "Error" },
+          answer_relevance: { score: 0, reason: "Error" },
+          tone_match: { score: 0, reason: "Error" },
+          brevity: { score: 0, reason: "Error" },
+          overall_feedback: `Error: ${error}`,
+        };
+      } else if (testCase.category === "team_files") {
+        errorEval = {
+          type: "team_files",
+          memory_usage: { score: 0, reason: "Error" },
+          information_accuracy: { score: 0, reason: "Error" },
+          natural_presentation: { score: 0, reason: "Error" },
+          answer_completeness: { score: 0, reason: "Error" },
+          tone_match: { score: 0, reason: "Error" },
+          overall_feedback: `Error: ${error}`,
+        };
+      } else {
+        errorEval = {
+          type: "standard",
+          brevity: { score: 0, reason: "Error" },
+          tone: { score: 0, reason: "Error" },
+          formatting: { score: 0, reason: "Error" },
+          personality: { score: 0, reason: "Error" },
+          helpfulness: { score: 0, reason: "Error" },
+          overall_feedback: `Error: ${error}`,
+        };
+      }
       results.push({
         testCase,
         response: `ERROR: ${error}`,
@@ -1146,6 +1376,7 @@ function printSummary(results: TestResult[]) {
   const standardResults = validResults.filter((r) => r.evaluation.type === "standard");
   const youtubeResults = validResults.filter((r) => r.evaluation.type === "youtube");
   const tbaResults = validResults.filter((r) => r.evaluation.type === "tba");
+  const teamFilesResults = validResults.filter((r) => r.evaluation.type === "team_files");
 
   if (standardResults.length > 0) {
     console.log("\nScores by Criterion (Standard):");
@@ -1183,6 +1414,20 @@ function printSummary(results: TestResult[]) {
           const eval_ = r.evaluation as TBAEvalResult;
           return sum + eval_[criterion].score;
         }, 0) / tbaResults.length;
+      const displayName = criterion.replace(/_/g, " ");
+      console.log(`  ${displayName}: ${criterionAvg.toFixed(2)}/5`);
+    }
+  }
+
+  if (teamFilesResults.length > 0) {
+    console.log("\nScores by Criterion (Team Files Memory):");
+    const teamFilesCriteria = ["memory_usage", "information_accuracy", "natural_presentation", "answer_completeness", "tone_match"] as const;
+    for (const criterion of teamFilesCriteria) {
+      const criterionAvg =
+        teamFilesResults.reduce((sum, r) => {
+          const eval_ = r.evaluation as TeamFilesEvalResult;
+          return sum + eval_[criterion].score;
+        }, 0) / teamFilesResults.length;
       const displayName = criterion.replace(/_/g, " ");
       console.log(`  ${displayName}: ${criterionAvg.toFixed(2)}/5`);
     }
