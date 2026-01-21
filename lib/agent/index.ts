@@ -734,13 +734,18 @@ export async function runAgent(
       // Log tool calls
       if (step.toolCalls && step.toolCalls.length > 0) {
         for (const toolCall of step.toolCalls) {
-          // Cast to access args and toolCallId properties safely
-          const toolCallAny = toolCall as { toolName: string; toolCallId: string; args?: unknown };
+          // Debug: log the actual structure
+          console.log("[Agent] Tool call structure:", JSON.stringify(toolCall, null, 2));
+          
+          // The AI SDK tool call has args directly on the object
+          const args = (toolCall as Record<string, unknown>).args;
+          const toolCallId = (toolCall as Record<string, unknown>).toolCallId as string;
+          
           await logAgentStep(runId, stepIndex++, {
             type: "tool_call",
             toolName: toolCall.toolName,
-            toolCallId: toolCallAny.toolCallId,
-            toolArgs: toolCallAny.args,
+            toolCallId: toolCallId,
+            toolArgs: args,
           });
         }
       }
@@ -748,13 +753,18 @@ export async function runAgent(
       // Log tool results
       if (step.toolResults && step.toolResults.length > 0) {
         for (const toolResult of step.toolResults) {
-          // Cast to access result and toolCallId properties safely
-          const toolResultAny = toolResult as { toolName: string; toolCallId: string; result?: unknown };
+          // Debug: log the actual structure
+          console.log("[Agent] Tool result structure:", JSON.stringify(toolResult, null, 2));
+          
+          // The AI SDK tool result has result directly on the object
+          const result = (toolResult as Record<string, unknown>).result;
+          const toolCallId = (toolResult as Record<string, unknown>).toolCallId as string;
+          
           await logAgentStep(runId, stepIndex++, {
             type: "tool_result",
             toolName: toolResult.toolName,
-            toolCallId: toolResultAny.toolCallId,
-            toolResult: toolResultAny.result,
+            toolCallId: toolCallId,
+            toolResult: result,
           });
         }
       }

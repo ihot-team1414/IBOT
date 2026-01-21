@@ -3,7 +3,6 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { SpinnerGapIcon, WarningOctagonIcon, CheckCircleIcon, WrenchIcon, ChatIcon, BrainIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -187,6 +186,65 @@ function GroupedStepCard({ step }: { step: GroupedStep }) {
   return <TextStepCard step={step} />;
 }
 
+// Animated skeleton component
+function Skeleton({ className }: { className?: string }) {
+  return (
+    <motion.div
+      className={cn("bg-muted rounded", className)}
+      animate={{ opacity: [0.5, 1, 0.5] }}
+      transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+    />
+  );
+}
+
+function StepSkeleton() {
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50">
+        <Skeleton className="size-4 rounded" />
+        <Skeleton className="h-4 w-24" />
+      </div>
+      <div className="px-3 py-2 border-t border-border space-y-2">
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="h-16 w-full rounded" />
+      </div>
+    </div>
+  );
+}
+
+function RunDetailSkeleton() {
+  return (
+    <motion.div 
+      className="space-y-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
+    >
+      {/* Metadata grid skeleton */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div className="space-y-1">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-5 w-12" />
+        </div>
+        <div className="space-y-1">
+          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-5 w-8" />
+        </div>
+      </div>
+
+      {/* Steps skeleton */}
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-28" />
+        <div className="space-y-3">
+          <StepSkeleton />
+          <StepSkeleton />
+          <StepSkeleton />
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 // Group steps: pair tool_calls with their tool_results, identify final response
 function groupSteps(steps: AgentStep[]): GroupedStep[] {
   const grouped: GroupedStep[] = [];
@@ -247,7 +305,7 @@ function RunDetail({ runId }: { runId: string }) {
   const run = useQuery(api.agentLogs.getRun, { runId }) as RunWithSteps | null | undefined;
 
   if (run === undefined) {
-    return <div className="p-4 text-muted-foreground">Loading...</div>;
+    return <RunDetailSkeleton />;
   }
 
   if (run === null) {
@@ -257,7 +315,12 @@ function RunDetail({ runId }: { runId: string }) {
   const groupedSteps = groupSteps(run.steps);
 
   return (
-    <div className="space-y-4">
+    <motion.div 
+      className="space-y-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
+    >
       {/* Metadata grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
         <div>
@@ -265,15 +328,15 @@ function RunDetail({ runId }: { runId: string }) {
           <p className="font-medium">{formatDuration(run.durationMs)}</p>
         </div>
         <div>
-          <span className="text-muted-foreground text-xs uppercase font-medium tracking-wide">Tool Calls</span>
-          <p className="font-medium">{groupedSteps.filter(s => s.type === "tool").length}</p>
+          <span className="text-muted-foreground text-xs uppercase font-medium tracking-wide">Steps</span>
+          <p className="font-medium">{groupedSteps.length}</p>
         </div>
-        {run.imageCount && run.imageCount > 0 && (
+        {/* {run.imageCount && run.imageCount > 0 && (
           <div>
             <span className="text-muted-foreground text-xs uppercase font-medium tracking-wide">Images</span>
             <p className="font-medium">{run.imageCount}</p>
           </div>
-        )}
+        )} */}
       </div>
       {run.errorMessage && (
         <div>
@@ -288,14 +351,21 @@ function RunDetail({ runId }: { runId: string }) {
         </h4>
         <div className="space-y-3">
           {groupedSteps.map((step, idx) => (
-            <GroupedStepCard key={idx} step={step} />
+            <motion.div
+              key={idx}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: idx * 0.05 }}
+            >
+              <GroupedStepCard step={step} />
+            </motion.div>
           ))}
           {groupedSteps.length === 0 && (
             <p className="text-sm text-muted-foreground">No steps recorded</p>
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -310,15 +380,14 @@ function RunListItem({ run, isExpanded, onToggle }: {
       className="cursor-pointer transition-colors hover:bg-muted/50 rounded-xl"
       onClick={onToggle}
     >
-      <CardHeader className="">
-        <div className="flex flex-col justify-start items-start gap-2">
-
-            <CardTitle className="text-base font-medium truncate flex items-center justify-between gap-2 w-full">
-              {truncateText(run.prompt, 80)}
-              <div className="flex min-w-10 items-start justify-end gap-2">
-            <StatusBadge status={run.status} />
-          </div>
-            </CardTitle>
+      <CardHeader className="max-w-full">
+        <div className="flex flex-col justify-start items-start gap-2 w-full">
+            <div className="flex items-center justify-between gap-2 max-w-full w-full">
+              <CardTitle className="text-base font-medium truncate flex-1 min-w-0">
+                {truncateText(run.prompt, 70)}
+              </CardTitle>
+              <StatusBadge status={run.status}  />
+            </div>
 
               <div className="flex items-center justify-between gap-2 flex-wrap text-muted-foreground w-full">
                 {run.userName && run.channelName && <span>{run.userName} in #{run.channelName}</span>}

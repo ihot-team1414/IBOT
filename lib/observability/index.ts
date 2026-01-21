@@ -65,14 +65,26 @@ export async function logAgentStep(
   }
 
   try {
+    const toolArgsStr = step.toolArgs ? JSON.stringify(step.toolArgs) : undefined;
+    const toolResultStr = step.toolResult ? JSON.stringify(step.toolResult) : undefined;
+    
+    console.log("[Observability] Logging step:", {
+      type: step.type,
+      toolName: step.toolName,
+      hasArgs: !!step.toolArgs,
+      hasResult: !!step.toolResult,
+      argsStr: toolArgsStr?.substring(0, 100),
+      resultStr: toolResultStr?.substring(0, 100),
+    });
+    
     await convex.mutation(api.agentLogs.addStep, {
       runId,
       stepIndex,
       type: step.type,
       toolName: step.toolName,
       toolCallId: step.toolCallId,
-      toolArgs: step.toolArgs ? JSON.stringify(step.toolArgs) : undefined,
-      toolResult: step.toolResult ? JSON.stringify(step.toolResult) : undefined,
+      toolArgs: toolArgsStr,
+      toolResult: toolResultStr,
       text: step.text,
     });
   } catch (error) {
