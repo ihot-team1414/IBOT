@@ -377,7 +377,7 @@ function RunListItem({ run, isExpanded, onToggle }: {
   return (
     <Card 
       size="sm" 
-      className="cursor-pointer transition-colors hover:bg-muted/50 rounded-xl"
+      className="cursor-pointer transition-colors duration-100 hover:bg-card/60 rounded-xl ring-1"
       onClick={onToggle}
     >
       <CardHeader className="max-w-full">
@@ -461,9 +461,13 @@ function RunList() {
 
 export default function ObservabilityPage() {
   return (
-    <div className="min-h-screen bg-background">
+    <>  
+    <div className="fixed inset-0 bg-linear-to-b from-background to-white -z-20"/>
+
+    <div className="fixed inset-0 bg-background  bg-[url('https://images.unsplash.com/photo-1531169509526-f8f1fdaa4a67?q=80&w=2574&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D')] bg-cover bg-end -z-10 opacity-5 grayscale"/>
+    <div>
       <div className="container mx-auto py-8 px-4 sm:max-w-2xl">
-        <div className="mb-8">
+        <div className="mb-4">
           <h1 className="text-4xl font-medium tracking-tight mb-2">IBOT Runs</h1>
           <p className="text-muted-foreground">
             Monitor and debug agent runs, tool calls, and responses.
@@ -473,5 +477,6 @@ export default function ObservabilityPage() {
         <RunList />
       </div>
     </div>
+    </>
   );
 }
