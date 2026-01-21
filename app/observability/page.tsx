@@ -5,7 +5,10 @@ import { api } from "@/convex/_generated/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SpinnerGapIcon, WarningOctagonIcon, CheckCircleIcon } from "@phosphor-icons/react";
 import { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { cn } from "@/lib/utils";
 
 type AgentRun = {
   _id: string;
@@ -46,19 +49,14 @@ type RunWithSteps = AgentRun & {
 };
 
 function StatusBadge({ status }: { status: "running" | "completed" | "error" }) {
-  const variants: Record<typeof status, "default" | "secondary" | "destructive"> = {
-    running: "secondary",
-    completed: "default",
-    error: "destructive",
+
+  const labels: Record<typeof status, React.ReactNode> = {
+    running: <SpinnerGapIcon size={16} className="animate-spin text-muted-foreground" />,
+    completed: <CheckCircleIcon size={16} className="text-green-700" />,
+    error: <WarningOctagonIcon size={16} className="text-red-700" />,
   };
 
-  const labels: Record<typeof status, string> = {
-    running: "Running",
-    completed: "Completed",
-    error: "Error",
-  };
-
-  return <Badge variant={variants[status]}>{labels[status]}</Badge>;
+  return <span className={cn("text-xs font-medium")}>{labels[status]}</span>;
 }
 
 function formatDuration(ms: number | undefined): string {
@@ -68,7 +66,16 @@ function formatDuration(ms: number | undefined): string {
 }
 
 function formatTimestamp(ts: number): string {
-  return new Date(ts).toLocaleString();
+  return new Date(ts).toLocaleString(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+    }
+  );
 }
 
 function truncateText(text: string, maxLength: number = 100): string {
@@ -182,7 +189,7 @@ function RunDetail({ runId }: { runId: string }) {
   }
 
   return (
-    <div className="space-y-4 p-4 bg-muted/30 rounded-lg">
+    <div className="space-y-4 p-4 bg-muted/30 rounded-md">
       {/* Metadata grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
         {run.userName && (
@@ -257,55 +264,46 @@ function RunListItem({ run, isExpanded, onToggle }: {
   onToggle: () => void;
 }) {
   return (
-    <Card size="sm">
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <CardTitle className="text-sm font-medium truncate">
+    <Card 
+      size="sm" 
+      className="cursor-pointer transition-colors hover:bg-muted/50 rounded-xl"
+      onClick={onToggle}
+    >
+      <CardHeader className="">
+        <div className="flex flex-col justify-start items-start gap-2">
+
+            <CardTitle className="text-base font-medium truncate flex items-center justify-between gap-2 w-full">
               {truncateText(run.prompt, 80)}
-            </CardTitle>
-            <CardDescription className="mt-1">
-              <div className="flex items-center gap-2 flex-wrap text-xs">
-                <span>{formatTimestamp(run.createdAt)}</span>
-                <span className="text-muted-foreground">|</span>
-                {run.userName && (
-                  <>
-                    <span className="font-medium">{run.userName}</span>
-                    <span className="text-muted-foreground">|</span>
-                  </>
-                )}
-                {run.channelName && (
-                  <>
-                    <span className="font-medium">#{run.channelName}</span>
-                    {run.isThread && <span className="text-muted-foreground">(thread)</span>}
-                    <span className="text-muted-foreground">|</span>
-                  </>
-                )}
-                <span>{run.stepCount} steps</span>
-                <span className="text-muted-foreground">|</span>
-                <span>{formatDuration(run.durationMs)}</span>
-                {run.imageCount && run.imageCount > 0 && (
-                  <>
-                    <span className="text-muted-foreground">|</span>
-                    <span>📷 {run.imageCount}</span>
-                  </>
-                )}
-              </div>
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
+              <div className="flex min-w-10 items-start justify-end gap-2">
             <StatusBadge status={run.status} />
-            <Button variant="outline" size="sm" onClick={onToggle}>
-              {isExpanded ? "Collapse" : "Expand"}
-            </Button>
           </div>
+            </CardTitle>
+
+              <div className="flex items-center justify-between gap-2 flex-wrap text-muted-foreground w-full">
+                {run.userName && run.channelName && <span>{run.userName} in #{run.channelName}</span>}
+                
+                <span className="text-muted-foreground text-xs">{formatTimestamp(run.createdAt)}</span>
+              </div>
+                
+
+          
         </div>
       </CardHeader>
-      {isExpanded && (
-        <CardContent>
-          <RunDetail runId={run.runId} />
-        </CardContent>
-      )}
+      <AnimatePresence initial={false}>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+            style={{ overflow: "hidden" }}
+          >
+            <CardContent>
+              <RunDetail runId={run.runId} />
+            </CardContent>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Card>
   );
 }
@@ -354,9 +352,9 @@ function RunList() {
 export default function ObservabilityPage() {
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto py-8 px-4">
+      <div className="container mx-auto py-8 px-4 sm:max-w-2xl">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold mb-2">Agent Observability</h1>
+          <h1 className="text-4xl font-medium tracking-tight mb-2">IBOT Runs</h1>
           <p className="text-muted-foreground">
             Monitor and debug agent runs, tool calls, and responses.
           </p>
